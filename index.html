@@ -27,7 +27,7 @@
         
         .boat-icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; box-shadow: 0 4px 10px rgba(0,0,0,0.4); cursor: pointer; transition: scale 0.2s ease; }
 .boat-icon:hover { scale: 1.15; }
-.stop-icon { background: #ffffff; border: 2.5px solid #00529b; border-radius: 50%; width: 14px; height: 14px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: pointer; transition: scale 0.2s ease; }
+.stop-icon { background: #ffffff; border: 2.5px solid #00529b; border-radius: 50%; width: 14px; height: 14px; box-sizing: border-box; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: pointer; transition: scale 0.2s ease; }
 .stop-icon:hover { scale: 1.4; }
 
         .line-dot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; border: 2px solid; flex-shrink: 0; box-sizing: border-box; }
@@ -73,7 +73,7 @@
         .fab { width: 45px; height: 45px; border-radius: 50%; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; transition: transform 0.2s, background 0.2s; color: #00529b; }
         .fab:hover { transform: scale(1.05); background: white; }
         
-        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.4); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(3px); opacity: 0; transition: opacity 0.2s ease; }
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.4); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(3px); opacity: 0; transition: opacity 0.2s ease; overscroll-behavior: contain; touch-action: none; }
         .modal-overlay.active { display: flex; opacity: 1; }
         
         .modal { background: white; padding: 20px; border-radius: 16px; width: 320px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.3); position: relative; }
@@ -86,13 +86,13 @@
         .modal-btn:hover { background: #003666; }
         .modal-btn.error { background: #e53935; }
         
-        .suggestions-dropdown { position: absolute; top: 48px; left: 0; right: 0; background: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); max-height: 220px; overflow-y: auto; z-index: 10; display: none; border: 1px solid #ddd; }
+        .suggestions-dropdown { position: absolute; top: 48px; left: 0; right: 0; background: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); max-height: 220px; overflow-y: auto; z-index: 10; display: none; border: 1px solid #ddd; overscroll-behavior: contain; }
         .suggestions-dropdown.active { display: block; }
         .suggestion-item { padding: 12px 15px; border-bottom: 1px solid #eee; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; }
         .suggestion-item:last-child { border-bottom: none; }
         .suggestion-item:hover { background: #f0f8ff; color: #00529b; }
         
-        .filter-list { display: flex; flex-direction: column; overflow-y: auto; padding-right: 5px; flex-grow: 1; }
+        .filter-list { display: flex; flex-direction: column; overflow-y: auto; padding-right: 5px; flex-grow: 1; overscroll-behavior: contain; }
         .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
         .toggle-row:last-child { border-bottom: none; }
         .toggle-info { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 14px; color: #333; }
@@ -143,7 +143,8 @@
     <script>
         const API_URL = 'https://api.bateolive.stream';
         
-        const map = L.map('map').setView([45.4371, 12.3326], 13);
+        const map = L.map('map', { zoomControl: false }).setView([45.4371, 12.3326], 13);
+        map.attributionControl.setPrefix(false);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
 
         const oms = new OverlappingMarkerSpiderfier(map, {
@@ -161,6 +162,7 @@
         const ACTV_COLORS = {
             '1': { bg: '#ffffff', text: '#000000', border: '#000000' },
             '2': { bg: '#e3001b', text: '#ffffff', border: '#e3001b' },
+            '2/': { bg: '#e3001b', text: '#ffffff', border: '#e3001b' },
             '3': { bg: '#ff8c00', text: '#000000', border: '#ff8c00' },
             '4.1': { bg: '#bd429b', text: '#ffffff', border: '#bd429b' },
             '4.2': { bg: '#bd429b', text: '#ffffff', border: '#bd429b' },
@@ -180,7 +182,8 @@
             '18': { bg: '#fced22', text: '#000000', border: '#e3001b' },
             '20': { bg: '#cbb3d5', text: '#000000', border: '#cbb3d5' },
             '22': { bg: '#c4d82d', text: '#006600', border: '#006600' },
-            'N':  { bg: '#1c355e', text: '#ffffff', border: '#1c355e' }
+            'N':  { bg: '#1c355e', text: '#ffffff', border: '#1c355e' },
+            '-':  { bg: '#000000', text: '#ffffff', border: '#ffffff' }
         };
 
         function getLineColors(lineId) {
@@ -221,10 +224,27 @@
             document.getElementById('drawer').classList.remove('open');
         }
 
+        function lockMap() {
+            map.dragging.disable();
+            map.scrollWheelZoom.disable();
+            map.doubleClickZoom.disable();
+            map.touchZoom.disable();
+            if (map.tap) map.tap.disable();
+        }
+
+        function unlockMap() {
+            map.dragging.enable();
+            map.scrollWheelZoom.enable();
+            map.doubleClickZoom.enable();
+            map.touchZoom.enable();
+            if (map.tap) map.tap.enable();
+        }
+
         function closeModals(e) { 
             document.getElementById('search-modal').classList.remove('active'); 
             document.getElementById('filter-modal').classList.remove('active'); 
             document.getElementById('search-suggestions').classList.remove('active');
+            unlockMap();
             
             const searchBtn = document.getElementById('search-btn');
             searchBtn.innerText = "Cerca";
@@ -233,6 +253,7 @@
 
         function openSearchModal() { 
             document.getElementById('search-modal').classList.add('active'); 
+            lockMap();
             document.getElementById('search-input').value = '';
             document.getElementById('search-input').focus(); 
         }
@@ -314,6 +335,7 @@
 
         async function openFilterModal() { 
             document.getElementById('filter-modal').classList.add('active'); 
+            lockMap();
             try {
                 const lines = [...new Set(globalBoats.map(b => b.line).filter(l => l !== '-'))].sort((a,b) => a.localeCompare(b, undefined, {numeric: true}));
                 
@@ -519,7 +541,6 @@
                 globalStops.forEach(stop => {
                     const marker = L.marker([stop.lat, stop.lon], { icon: stopIcon }).addTo(map);
                     marker.on('click', () => renderStopDrawer(stop));
-                    oms.addMarker(marker); 
                 });
             } catch(e) { console.error("Errore caricamento fermate:", e); }
         }
@@ -541,7 +562,8 @@
                             return; 
                         }
 
-                        const iconHtml = `<div class="boat-icon" style="background-color: ${boat.color}; color: ${boat.textColor}; border: 2.5px solid ${boat.border}; width: 26px; height: 26px; box-sizing: border-box;">${boat.line}</div>`;
+                        const boatColors = getLineColors(boat.line);
+                        const iconHtml = `<div class="boat-icon" style="background-color: ${boatColors.bg}; color: ${boatColors.text}; border: 2.5px solid ${boatColors.border}; width: 26px; height: 26px; box-sizing: border-box;">${boat.line}</div>`;
                         const customBoatIcon = L.divIcon({ html: iconHtml, className: '', iconSize: [26, 26], iconAnchor: [13, 13] });
 
                         if (boatMarkers[boat.id]) {
