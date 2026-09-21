@@ -28,8 +28,9 @@
         
         .boat-icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; box-shadow: 0 4px 10px rgba(0,0,0,0.4); cursor: pointer; transition: scale 0.2s ease; }
 .boat-icon:hover { scale: 1.15; }
-.stop-icon { background: #ffffff; border: 2.5px solid #00529b; border-radius: 50%; width: 14px; height: 14px; box-sizing: border-box; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: pointer; transition: scale 0.2s ease; }
-.stop-icon:hover { scale: 1.4; }
+.stop-icon-wrap { width: 14px; height: 14px; }
+.stop-icon-inner { background: #ffffff; border: 2.5px solid #00529b; border-radius: 50%; width: 14px; height: 14px; box-sizing: border-box; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: pointer; transition: scale 0.2s ease; }
+.stop-icon-inner:hover { scale: 1.4; }
 
         .line-dot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; border: 2px solid; flex-shrink: 0; box-sizing: border-box; }
 
@@ -537,7 +538,7 @@
             try {
                 const res = await fetch(`${API_URL}/api/stops`);
                 globalStops = await res.json();
-                const stopIcon = L.divIcon({ className: 'stop-icon', iconSize: [14, 14], iconAnchor: [7, 7] });
+                const stopIcon = L.divIcon({ html: '<div class="stop-icon-inner"></div>', className: 'stop-icon-wrap', iconSize: [14, 14], iconAnchor: [7, 7] });
                 
                 globalStops.forEach(stop => {
                     const marker = L.marker([stop.lat, stop.lon], { icon: stopIcon }).addTo(map);
