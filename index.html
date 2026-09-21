@@ -22,7 +22,8 @@
     </script>
     
     <style>
-        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; overflow: hidden; background: #e0e0e0; }
+        html, body { height: 100%; overflow: hidden; }
+        body { position: fixed; inset: 0; width: 100%; margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: #e0e0e0; }
         #map { width: 100vw; height: 100vh; z-index: 1; }
         
         .boat-icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; box-shadow: 0 4px 10px rgba(0,0,0,0.4); cursor: pointer; transition: scale 0.2s ease; }
@@ -80,7 +81,7 @@
         .modal h3 { margin-top: 0; margin-bottom: 15px; color: #00529b; font-weight: 600; flex-shrink: 0; }
         
         .search-container { position: relative; flex-shrink: 0; }
-        .modal input[type="text"] { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; box-sizing: border-box; font-family: 'Inter', sans-serif; outline: none; font-size: 14px; }
+        .modal input[type="text"] { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; box-sizing: border-box; font-family: 'Inter', sans-serif; outline: none; font-size: 16px; }
         .modal input[type="text"]:focus { border-color: #00529b; }
         .modal-btn { background: #00529b; color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; cursor: pointer; font-weight: 600; font-family: 'Inter', sans-serif; transition: background 0.2s; flex-shrink: 0; margin-top: 15px; }
         .modal-btn:hover { background: #003666; }
@@ -143,7 +144,7 @@
     <script>
         const API_URL = 'https://api.bateolive.stream';
         
-        const map = L.map('map', { zoomControl: false }).setView([45.4371, 12.3326], 13);
+        const map = L.map('map', { zoomControl: false, keyboard: false }).setView([45.4371, 12.3326], 13);
         map.attributionControl.setPrefix(false);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
 
