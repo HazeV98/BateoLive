@@ -22,82 +22,131 @@
     </script>
     
     <style>
+        :root {
+            --color-primary: #00529b;
+            --color-primary-dark: #003666;
+            --bg-page: #e0e0e0;
+            --panel-bg: rgba(255, 255, 255, 0.94);
+            --panel-border: rgba(255,255,255,0.8);
+            --modal-bg: #ffffff;
+            --text-primary: #222222;
+            --text-secondary: #666666;
+            --text-muted: #999999;
+            --row-border: #f0f0f0;
+            --row-hover: rgba(0,0,0,0.02);
+            --current-bg: #f0f8ff;
+            --input-bg: #ffffff;
+            --input-border: #dddddd;
+            --scrollbar-thumb: #cccccc;
+            --map-filter: saturate(0.92) brightness(1.01);
+            --shadow-color: rgba(0,0,0,0.15);
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-page: #0e141d;
+                --panel-bg: rgba(22, 30, 42, 0.92);
+                --panel-border: rgba(255,255,255,0.08);
+                --modal-bg: #161e2a;
+                --text-primary: #e8ecf1;
+                --text-secondary: #9aa5b1;
+                --text-muted: #6b7684;
+                --row-border: rgba(255,255,255,0.07);
+                --row-hover: rgba(255,255,255,0.04);
+                --current-bg: rgba(0,112,188,0.18);
+                --input-bg: #1a2330;
+                --input-border: #2c3a4d;
+                --scrollbar-thumb: #3a4657;
+                --map-filter: saturate(0.7) brightness(0.8) invert(1) hue-rotate(180deg) contrast(0.9);
+                --shadow-color: rgba(0,0,0,0.55);
+            }
+        }
+
         html, body { height: 100%; overflow: hidden; }
-        body { position: fixed; inset: 0; width: 100%; margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: #e0e0e0; }
-        #map { width: 100vw; height: 100vh; z-index: 1; }
-        
-        .boat-icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; box-shadow: 0 4px 10px rgba(0,0,0,0.4); cursor: pointer; transition: scale 0.2s ease; }
+        body { position: fixed; inset: 0; width: 100%; margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: var(--bg-page); }
+        #map { width: 100vw; height: 100vh; z-index: 1; background: var(--bg-page); }
+        #map .leaflet-tile-pane { filter: var(--map-filter); transition: filter 0.3s ease; }
+
+        .boat-icon-wrap { width: 26px; height: 26px; position: relative; }
+        .boat-pulse-ring { position: absolute; top: 50%; left: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; border: 2px solid var(--color-primary); animation: pulseRing 1.6s ease-out infinite; pointer-events: none; }
+        @keyframes pulseRing { 0% { transform: scale(0.9); opacity: 0.8; } 100% { transform: scale(2.3); opacity: 0; } }
+
+        .boat-icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.35)); cursor: pointer; transition: scale 0.2s ease; }
 .boat-icon:hover { scale: 1.15; }
 .stop-icon-wrap { width: 14px; height: 14px; }
-.stop-icon-inner { background: #ffffff; border: 2.5px solid #00529b; border-radius: 50%; width: 14px; height: 14px; box-sizing: border-box; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: pointer; transition: scale 0.2s ease; }
+.stop-icon-inner { background: #ffffff; border: 2.5px solid #00529b; border-radius: 50%; width: 14px; height: 14px; box-sizing: border-box; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); cursor: pointer; transition: scale 0.2s ease; }
 .stop-icon-inner:hover { scale: 1.4; }
 
         .line-dot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; border: 2px solid; flex-shrink: 0; box-sizing: border-box; }
 
-        #drawer { position: absolute; top: 15px; bottom: 15px; right: -390px; width: 360px; max-height: calc(100vh - 30px); height: auto; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 16px; box-shadow: -4px 10px 30px rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.8); z-index: 1000; transition: right 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); display: flex; flex-direction: column; overflow: hidden; }
+        #drawer { position: absolute; top: 15px; bottom: 15px; right: -390px; width: 360px; max-height: calc(100vh - 30px); height: auto; background: var(--panel-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 16px; box-shadow: -4px 10px 30px var(--shadow-color); border: 1px solid var(--panel-border); z-index: 1000; transition: right 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); display: flex; flex-direction: column; overflow: hidden; }
         #drawer.open { right: 15px; }
-        #drawer-header { padding: 20px; background: linear-gradient(135deg, #00529b 0%, #003666 100%); color: white; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        #drawer-header { padding: 20px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='36' viewBox='0 0 140 36'%3E%3Cpath d='M0 20 Q17.5 6 35 20 T70 20 T105 20 T140 20' stroke='white' stroke-width='2' fill='none' opacity='0.16'/%3E%3Cpath d='M0 28 Q17.5 16 35 28 T70 28 T105 28 T140 28' stroke='white' stroke-width='1.5' fill='none' opacity='0.1'/%3E%3C/svg%3E"), linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%); background-repeat: repeat-x, no-repeat; background-position: bottom left, 0 0; background-size: 140px 36px, cover; color: white; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
         #drawer-title { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.5px; }
         #close-btn { background: rgba(255,255,255,0.2); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; font-size: 14px; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; justify-content: center; }
         #close-btn:hover { background: rgba(255,255,255,0.4); }
         #drawer-content { padding: 0; overflow-y: auto; flex-grow: 1; }
         
         .drawer-section { padding: 20px; }
-        .speed-card { background: linear-gradient(to right, #f8f9fa, #ffffff); padding: 15px; border-radius: 10px; font-size: 14px; margin-bottom: 20px; border-left: 4px solid #00529b; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; }
-        .timeline-title { font-size: 13px; text-transform: uppercase; color: #666; font-weight: 600; margin-bottom: 15px; letter-spacing: 0.5px; }
+        .speed-card { background: linear-gradient(to right, var(--row-hover), var(--panel-bg)); padding: 15px; border-radius: 10px; font-size: 14px; margin-bottom: 20px; border-left: 4px solid var(--color-primary); box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; color: var(--text-primary); }
+        .timeline-title { font-size: 13px; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 15px; letter-spacing: 0.5px; }
         
-        .time-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; cursor: pointer; transition: background-color 0.2s ease;}
-        .time-row:hover { background-color: rgba(0,0,0,0.02); }
+        @keyframes rowIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .time-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--row-border); font-size: 14px; cursor: pointer; transition: background-color 0.2s ease; animation: rowIn 0.3s ease both; }
+        .time-row:hover { background-color: var(--row-hover); }
         .time-row:last-child { border-bottom: none; }
         .stop-info { display: flex; align-items: center; gap: 10px; flex: 1; padding-right: 15px; overflow: hidden; }
-        .dot { width: 8px; height: 8px; background: #00529b; border-radius: 50%; }
-        .stop-name { font-weight: 500; color: #333; }
+        .dot { width: 8px; height: 8px; background: var(--color-primary); border-radius: 50%; }
+        .stop-name { font-weight: 500; color: var(--text-primary); }
         
         .stop-passed { opacity: 0.5; }
-        .stop-passed .dot { background: #999; }
-        .stop-current { background: #f0f8ff; border-radius: 8px; padding: 12px 10px; margin: -12px -10px; }
+        .stop-passed .dot { background: var(--text-muted); }
+        .stop-current { background: var(--current-bg); border-radius: 8px; padding: 12px 10px; margin: -12px -10px; }
         
         .time-block { text-align: right; min-width: 90px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-        .time-sub { font-size: 12px; color: #555; margin-bottom: 2px; }
-        .time-main { font-weight: 700; font-size: 14px; color: #111; }
-        .time-strike { text-decoration: line-through; color: #9e9e9e; font-size: 12px; margin-right: 4px; font-weight: 400; }
+        .time-sub { font-size: 12px; color: var(--text-secondary); margin-bottom: 2px; }
+        .time-main { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+        .time-strike { text-decoration: line-through; color: var(--text-muted); font-size: 12px; margin-right: 4px; font-weight: 400; }
         
-        .badge { padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; color: white; display: inline-block; text-align: center; margin-top: 4px; }
+        .badge { padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; color: white; display: inline-flex; align-items: center; justify-content: center; text-align: center; margin-top: 4px; }
         .badge-delay { background: #e53935; } 
         .badge-early { background: #f39c12; } 
         .badge-ok { background: #43a047; }    
+
+        .skeleton-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--row-border); }
+        .skeleton-block { border-radius: 6px; height: 14px; background: linear-gradient(90deg, var(--row-border) 25%, var(--row-hover) 37%, var(--row-border) 63%); background-size: 400% 100%; animation: skeletonShimmer 1.4s ease infinite; }
+        @keyframes skeletonShimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
         
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 10px; }
 
         .fab-container { position: absolute; bottom: 30px; left: 15px; z-index: 1000; display: flex; flex-direction: column; gap: 15px; }
-        .fab { width: 45px; height: 45px; border-radius: 50%; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; transition: transform 0.2s, background 0.2s; color: #00529b; }
-        .fab:hover { transform: scale(1.05); background: white; }
+        .fab { width: 45px; height: 45px; border-radius: 50%; background: var(--panel-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--panel-border); box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; transition: transform 0.2s, background 0.2s; color: var(--color-primary); }
+        .fab:hover { transform: scale(1.05); }
         
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.4); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(3px); opacity: 0; transition: opacity 0.2s ease; overscroll-behavior: contain; touch-action: none; }
         .modal-overlay.active { display: flex; opacity: 1; }
         
-        .modal { background: white; padding: 20px; border-radius: 16px; width: 320px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.3); position: relative; }
-        .modal h3 { margin-top: 0; margin-bottom: 15px; color: #00529b; font-weight: 600; flex-shrink: 0; }
+        .modal { background: var(--modal-bg); padding: 20px; border-radius: 16px; width: 320px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.3); position: relative; }
+        .modal h3 { margin-top: 0; margin-bottom: 15px; color: var(--color-primary); font-weight: 600; flex-shrink: 0; }
         
         .search-container { position: relative; flex-shrink: 0; }
-        .modal input[type="text"] { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; box-sizing: border-box; font-family: 'Inter', sans-serif; outline: none; font-size: 16px; }
-        .modal input[type="text"]:focus { border-color: #00529b; }
-        .modal-btn { background: #00529b; color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; cursor: pointer; font-weight: 600; font-family: 'Inter', sans-serif; transition: background 0.2s; flex-shrink: 0; margin-top: 15px; }
-        .modal-btn:hover { background: #003666; }
+        .modal input[type="text"] { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-primary); margin-bottom: 15px; box-sizing: border-box; font-family: 'Inter', sans-serif; outline: none; font-size: 16px; }
+        .modal input[type="text"]:focus { border-color: var(--color-primary); }
+        .modal-btn { background: var(--color-primary); color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; cursor: pointer; font-weight: 600; font-family: 'Inter', sans-serif; transition: background 0.2s; flex-shrink: 0; margin-top: 15px; }
+        .modal-btn:hover { background: var(--color-primary-dark); }
         .modal-btn.error { background: #e53935; }
         
-        .suggestions-dropdown { position: absolute; top: 48px; left: 0; right: 0; background: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); max-height: 220px; overflow-y: auto; z-index: 10; display: none; border: 1px solid #ddd; overscroll-behavior: contain; }
+        .suggestions-dropdown { position: absolute; top: 48px; left: 0; right: 0; background: var(--modal-bg); border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); max-height: 220px; overflow-y: auto; z-index: 10; display: none; border: 1px solid var(--input-border); overscroll-behavior: contain; }
         .suggestions-dropdown.active { display: block; }
-        .suggestion-item { padding: 12px 15px; border-bottom: 1px solid #eee; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; }
+        .suggestion-item { padding: 12px 15px; border-bottom: 1px solid var(--row-border); cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: var(--text-primary); }
         .suggestion-item:last-child { border-bottom: none; }
-        .suggestion-item:hover { background: #f0f8ff; color: #00529b; }
+        .suggestion-item:hover { background: var(--current-bg); color: var(--color-primary); }
         
         .filter-list { display: flex; flex-direction: column; overflow-y: auto; padding-right: 5px; flex-grow: 1; overscroll-behavior: contain; }
-        .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--row-border); }
         .toggle-row:last-child { border-bottom: none; }
-        .toggle-info { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 14px; color: #333; }
+        .toggle-info { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 14px; color: var(--text-primary); }
         
         .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -147,7 +196,7 @@
         
         const map = L.map('map', { zoomControl: false, keyboard: false }).setView([45.4371, 12.3326], 13);
         map.attributionControl.setPrefix(false);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd', attribution: '© OpenStreetMap contributors © CARTO' }).addTo(map);
 
         const oms = new OverlappingMarkerSpiderfier(map, {
             keepSpiderfied: true,
@@ -192,6 +241,22 @@
             return ACTV_COLORS[lineId] || { bg: '#888888', text: '#ffffff', border: '#888888' };
         }
 
+        function haptic() {
+            try { if (navigator.vibrate) navigator.vibrate(10); } catch(e) {}
+        }
+
+        function getSkeletonHtml(rows) {
+            let html = '';
+            for (let i = 0; i < (rows || 4); i++) {
+                html += `
+                <div class="skeleton-row">
+                    <div class="skeleton-block" style="width: 60%;"></div>
+                    <div class="skeleton-block" style="width: 20%;"></div>
+                </div>`;
+            }
+            return html;
+        }
+
         function formatTime(unixTimestamp) {
             if (!unixTimestamp || isNaN(unixTimestamp)) return '--:--';
             const d = new Date(unixTimestamp * 1000);
@@ -199,11 +264,11 @@
         }
 
         function getDelayBadge(delaySec) {
-            if (delaySec === 0 || delaySec === null || delaySec === undefined) return `<span class="badge badge-ok">In orario</span>`;
+            if (delaySec === 0 || delaySec === null || delaySec === undefined) return `<span class="badge badge-ok"><i class="fa-solid fa-check" style="font-size:9px; margin-right:3px;"></i>In orario</span>`;
             const min = Math.round(delaySec / 60);
-            if (min >= 1) return `<span class="badge badge-delay">+${min}'</span>`;
-            if (min <= -1) return `<span class="badge badge-early">${min}'</span>`; 
-            return `<span class="badge badge-ok">In orario</span>`;
+            if (min >= 1) return `<span class="badge badge-delay"><i class="fa-solid fa-arrow-up" style="font-size:9px; margin-right:3px;"></i>+${min}'</span>`;
+            if (min <= -1) return `<span class="badge badge-early"><i class="fa-solid fa-arrow-down" style="font-size:9px; margin-right:3px;"></i>${min}'</span>`; 
+            return `<span class="badge badge-ok"><i class="fa-solid fa-check" style="font-size:9px; margin-right:3px;"></i>In orario</span>`;
         }
 
         function buildTimeLine(label, scheduled, estimated, isDelayed) {
@@ -222,6 +287,7 @@
             document.getElementById('drawer').classList.add('open');
         }
         function closeDrawer() {
+            haptic();
             activeSelection = null;
             document.getElementById('drawer').classList.remove('open');
         }
@@ -254,6 +320,7 @@
         }
 
         function openSearchModal() { 
+            haptic();
             document.getElementById('search-modal').classList.add('active'); 
             lockMap();
             document.getElementById('search-input').value = '';
@@ -336,6 +403,7 @@
         }
 
         async function openFilterModal() { 
+            haptic();
             document.getElementById('filter-modal').classList.add('active'); 
             lockMap();
             try {
@@ -403,7 +471,7 @@
             }
         };
 
-        async function renderBoatDrawer(boat) {
+        async function renderBoatDrawer(boat, isRefresh) {
             activeSelection = { type: 'boat', data: boat };
             let baseInfo = `
                 <div class="speed-card" style="justify-content: flex-start;">
@@ -411,8 +479,13 @@
                 </div>`;
             
             if (!boat.tripId) {
-                openDrawer(boat.label, baseInfo + `<p style="color:#666; font-size:14px;">In attesa di assegnazione corsa...</p>`);
+                if (!isRefresh) { haptic(); openDrawer(boat.label, baseInfo + `<p style="color:var(--text-secondary); font-size:14px;">In attesa di assegnazione corsa...</p>`); }
                 return;
+            }
+
+            if (!isRefresh) {
+                haptic();
+                openDrawer(boat.label, baseInfo + getSkeletonHtml(4));
             }
             
             try {
@@ -422,12 +495,12 @@
                 if (!activeSelection || activeSelection.type !== 'boat' || activeSelection.data.id !== boat.id) return;
 
                 if (stopTimes.length === 0) {
-                    openDrawer(boat.label, baseInfo + `<p style="color:#666; font-size:14px;">Nessun orario disponibile per la corsa.</p>`);
+                    openDrawer(boat.label, baseInfo + `<p style="color:var(--text-secondary); font-size:14px;">Nessun orario disponibile per la corsa.</p>`);
                     return;
                 }
 
                 let html = baseInfo + `<div class="timeline-title">Percorso corsa attuale</div>`;
-                stopTimes.forEach(st => {
+                stopTimes.forEach((st, idx) => {
                     let badgeHtml = getDelayBadge(st.delay);
                     const isOffSchedule = Math.abs(Math.round(st.delay / 60)) >= 1;
                     
@@ -452,7 +525,7 @@
                         let arrHtml = buildTimeLine("Arr", st.scheduledArrival, st.estimatedArrival, isOffSchedule);
                         let depHtml = "";
                         if (st.status === 'CURRENT') {
-                            depHtml = `<div class="time-sub">Part: <span class="time-main" style="color:#00529b;">In sosta...</span></div>`;
+                            depHtml = `<div class="time-sub">Part: <span class="time-main" style="color:var(--color-primary);">In sosta...</span></div>`;
                         } else {
                             depHtml = buildTimeLine("Part", st.scheduledDeparture, st.estimatedDeparture, isOffSchedule);
                         }
@@ -460,7 +533,7 @@
                     }
 
                     html += `
-                    <div class="time-row ${passedClass}" style="cursor:default;">
+                    <div class="time-row ${passedClass}" style="cursor:default; animation-delay:${idx * 0.03}s;">
                         <div class="stop-info">
                             ${dotIndicator}
                             <span class="stop-name">${st.stopName}</span>
@@ -475,8 +548,12 @@
             } catch(e) { console.error(e); }
         }
 
-        async function renderStopDrawer(stop) {
+        async function renderStopDrawer(stop, isRefresh) {
             activeSelection = { type: 'stop', data: stop };
+            if (!isRefresh) {
+                haptic();
+                openDrawer(stop.name, `<div class="timeline-title" style="margin-bottom:20px;">Partenze (Fino a -1h / +3h)</div>` + getSkeletonHtml(5));
+            }
             try {
                 const res = await fetch(`${API_URL}/api/stop/${stop.id}`);
                 const arrivals = await res.json();
@@ -485,9 +562,9 @@
                 
                 let html = `<div class="timeline-title" style="margin-bottom:20px;">Partenze (Fino a -1h / +3h)</div>`;
                 if (arrivals.length === 0) {
-                    html += `<p style="color:#666; font-size:14px;">Nessuna partenza in programma.</p>`;
+                    html += `<p style="color:var(--text-secondary); font-size:14px;">Nessuna partenza in programma.</p>`;
                 } else {
-                    arrivals.forEach(arr => {
+                    arrivals.forEach((arr, idx) => {
                         let badgeHtml = getDelayBadge(arr.delay);
                         const isOffSchedule = Math.abs(Math.round(arr.delay / 60)) >= 1;
                         
@@ -502,21 +579,22 @@
                             timeHtml = `<span class="time-main">--:--</span>`;
                         }
 
-                        let opacityClass = arr.status === 'PASSED' ? 'style="opacity: 0.5;"' : (arr.status === 'CURRENT' ? 'style="background: #f0f8ff; padding: 10px; border-radius: 8px; margin: -10px;"' : '');
+                        let extraStyle = arr.status === 'PASSED' ? 'opacity: 0.5;' : (arr.status === 'CURRENT' ? 'background: var(--current-bg); padding: 10px; border-radius: 8px; margin: -10px;' : '');
+                        const rowStyle = `style="${extraStyle} animation-delay:${idx * 0.03}s;"`;
                         
                         let statusTextHtml = '';
-                        if (arr.status === 'PASSED') statusTextHtml = '<small style="color:#666; margin-top:2px;">(Partito)</small>';
-                        else if (arr.status === 'CURRENT') statusTextHtml = '<small style="color:#00529b; margin-top:2px; font-weight:600;">(In sosta)</small>';
+                        if (arr.status === 'PASSED') statusTextHtml = '<small style="color:var(--text-secondary); margin-top:2px;">(Partito)</small>';
+                        else if (arr.status === 'CURRENT') statusTextHtml = '<small style="color:var(--color-primary); margin-top:2px; font-weight:600;">(In sosta)</small>';
 
                         const colors = getLineColors(arr.routeId);
                         const dotHtml = `<div class="line-dot" style="background-color: ${colors.bg}; color: ${colors.text}; border-color: ${colors.border}; margin-right: 8px;">${arr.routeId}</div>`;
 
                         html += `
-                        <div class="time-row" ${opacityClass} onclick="locateBoat('${arr.tripId}', '${arr.liveBoatId || ''}')">
+                        <div class="time-row" ${rowStyle} onclick="locateBoat('${arr.tripId}', '${arr.liveBoatId || ''}')">
                             <div class="stop-info" style="flex-direction: column; align-items: flex-start; gap: 4px; padding-bottom:4px;">
                                 <div style="display: flex; align-items: center; width: 100%;">
                                     ${dotHtml}
-                                    <span style="font-size: 14px; font-weight: 600; color: #333; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${arr.destination || 'Sconosciuta'}">${arr.destination || 'Sconosciuta'}</span>
+                                    <span style="font-size: 14px; font-weight: 600; color: var(--text-primary); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${arr.destination || 'Sconosciuta'}">${arr.destination || 'Sconosciuta'}</span>
                                 </div>
                                 <div style="display:flex; justify-content:space-between; width:100%;">
                                     ${statusTextHtml}
@@ -565,7 +643,9 @@
                         }
 
                         const boatColors = getLineColors(boat.line);
-                        const iconHtml = `<div class="boat-icon" style="background-color: ${boatColors.bg}; color: ${boatColors.text}; border: 2.5px solid ${boatColors.border}; width: 26px; height: 26px; box-sizing: border-box;">${boat.line}</div>`;
+                        const isSelectedBoat = activeSelection && activeSelection.type === 'boat' && activeSelection.data.id === boat.id;
+                        const pulseHtml = isSelectedBoat ? '<div class="boat-pulse-ring"></div>' : '';
+                        const iconHtml = `<div class="boat-icon-wrap">${pulseHtml}<div class="boat-icon" style="background-color: ${boatColors.bg}; color: ${boatColors.text}; border: 2.5px solid ${boatColors.border}; width: 26px; height: 26px; box-sizing: border-box;">${boat.line}</div></div>`;
                         const customBoatIcon = L.divIcon({ html: iconHtml, className: '', iconSize: [26, 26], iconAnchor: [13, 13] });
 
                         if (boatMarkers[boat.id]) {
@@ -579,14 +659,14 @@
                             boatMarkers[boat.id] = marker;
                         }
 
-                        if (activeSelection && activeSelection.type === 'boat' && activeSelection.data.id === boat.id) {
-                            renderBoatDrawer(boat);
+                        if (isSelectedBoat) {
+                            renderBoatDrawer(boat, true);
                         }
                     }
                 });
 
                 if (activeSelection && activeSelection.type === 'stop') {
-                    renderStopDrawer(activeSelection.data);
+                    renderStopDrawer(activeSelection.data, true);
                 }
 
             } catch (error) { console.error("Errore di rete:", error); }
