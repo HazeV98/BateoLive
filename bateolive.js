@@ -4,20 +4,10 @@
 // tendina fermate e rotta della linea sulla mappa.
 // ==========================================
 
-import {
-    TURNI_SENZA_CORSE, dateToLocalISO, stringToNum, esc,
-    turnoEffettivo, unisciRebecchini, ferieDelGiorno, haVarianti, caricaDatiTurni
-} from "./turni-core.js"; // va importato sempre con questo stesso percorso (vedi turni-core.js)
+import { getApps, getApp, initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, sendPasswordResetEmail, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
-// Firebase: autenticazione condivisa con l'app principale.
-import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-import {
-    getAuth, onAuthStateChanged, signInWithEmailAndPassword,
-    sendPasswordResetEmail, signOut
-} from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
-import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
-
-const FIREBASE_CONFIG = {
+const BATEOLIVE_FIREBASE_CONFIG = {
     apiKey: "AIzaSyDpamGt2bsT6TJMwnerIUTSfCVFBTJtos4",
     authDomain: "utility-haze.firebaseapp.com",
     projectId: "utility-haze",
@@ -26,23 +16,14 @@ const FIREBASE_CONFIG = {
     appId: "1:686237947418:web:f03ba19ab8fff43110a3a3"
 };
 
-let bvFirebaseApp = null;
-let bvFirebaseAuth = null;
-let bvFirebaseDb = null;
-let bvFirebaseUser = null;
-let bvFirebaseProfile = null;
-let bvAuthReady = false;
-let bvAuthUnsubscribe = null;
-let bvAuthLoginBusy = false;
+const bateoliveFirebaseApp = getApps().length ? getApp() : initializeApp(BATEOLIVE_FIREBASE_CONFIG);
+const bateoliveAuth = getAuth(bateoliveFirebaseApp);
+let bateoliveAuthenticated = !!bateoliveAuth.currentUser;
 
-function initBvFirebase() {
-    if (!bvFirebaseApp) {
-        bvFirebaseApp = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
-        bvFirebaseAuth = getAuth(bvFirebaseApp);
-        bvFirebaseDb = getFirestore(bvFirebaseApp);
-    }
-    return { auth: bvFirebaseAuth, db: bvFirebaseDb };
-}
+import {
+    TURNI_SENZA_CORSE, dateToLocalISO, stringToNum, esc,
+    turnoEffettivo, unisciRebecchini, ferieDelGiorno, haVarianti, caricaDatiTurni
+} from "./turni-core.js"; // va importato sempre con questo stesso percorso (vedi turni-core.js)
 
 const API_URL = 'https://api.bateolive.stream';
 let globalBoats = [];
@@ -154,27 +135,8 @@ export function initUIBateoLive() {
         
         .bv-line-dot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; border: 2px solid; flex-shrink: 0; box-sizing: border-box; }
 
-        /* Profilo in alto a sinistra */
-        .bv-profile-btn { position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); left: 20px; z-index: 1000; width: 45px; height: 45px; border-radius: 50%; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; color: #00529b; transition: .2s ease; }
-        .bv-profile-btn.logged { background: #00529b; color: #fff; }
-
-        .bv-auth-modal { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,.35); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); display: none; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; }
-        .bv-auth-modal.active { display: flex; }
-        .bv-auth-card { width: min(390px, 100%); background: #fff; border-radius: 20px; padding: 24px; box-sizing: border-box; box-shadow: 0 15px 45px rgba(0,0,0,.28); position: relative; }
-        .bv-auth-close { position: absolute; right: 14px; top: 12px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: #f2f2f2; color: #555; font-size: 18px; cursor: pointer; }
-        .bv-auth-title { margin: 0 40px 6px 0; color: #00529b; font-size: 22px; font-weight: 800; }
-        .bv-auth-subtitle { margin: 0 0 18px; color: #777; font-size: 13px; }
-        .bv-auth-label { display:block; margin: 12px 0 5px; color:#555; font-size:12px; font-weight:700; }
-        .bv-auth-input { width:100%; box-sizing:border-box; padding:12px 13px; border:1px solid #ddd; border-radius:10px; outline:none; font:inherit; font-size:14px; }
-        .bv-auth-input:focus { border-color:#00529b; box-shadow:0 0 0 3px rgba(0,82,155,.1); }
-        .bv-auth-btn { width:100%; border:0; border-radius:11px; padding:12px; margin-top:16px; background:#00529b; color:#fff; font-size:15px; font-weight:800; cursor:pointer; }
-        .bv-auth-btn:disabled { opacity:.6; cursor:wait; }
-        .bv-auth-link { display:block; text-align:center; margin-top:13px; color:#00529b; font-size:13px; font-weight:700; cursor:pointer; }
-        .bv-auth-error { display:none; margin-top:12px; padding:9px 10px; border-radius:9px; background:#fff0f0; color:#c62828; font-size:12px; font-weight:600; }
-        .bv-auth-profile { display:none; }
-        .bv-auth-profile-name { font-size:20px; font-weight:800; color:#111; margin-bottom:4px; }
-        .bv-auth-profile-email { font-size:13px; color:#666; margin-bottom:18px; word-break:break-word; }
-        .bv-auth-logout { width:100%; border:1px solid #ddd; border-radius:11px; padding:11px; background:#fff; color:#c62828; font-weight:800; cursor:pointer; }
+        /* Tasto fluttuante in alto a sinistra (Indietro) */
+        .bv-back-btn { position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); left: 20px; z-index: 1000; width: 45px; height: 45px; border-radius: 50%; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; color: #00529b; }
 
         /* Contenitore Fabs in basso a sinistra */
         .bv-fab-container { position: absolute; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); left: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 15px; }
@@ -318,14 +280,22 @@ export function initUIBateoLive() {
         #modal-bateolive-main ::-webkit-scrollbar { width: 6px; }
         #modal-bateolive-main ::-webkit-scrollbar-track { background: transparent; }
         #modal-bateolive-main ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 10px; }
+        .bv-profile-btn { position: absolute; top: 16px; left: 16px; z-index: 3000; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255,255,255,.95); color: #00529b; box-shadow: 0 3px 12px rgba(0,0,0,.25); cursor: pointer; font-size: 18px; }
+        .bv-profile-btn.logged { color: #28a745; }
+        .bv-auth-modal .bv-modal { max-width: 360px; }
+        .bv-auth-title { display:flex; align-items:center; gap:8px; }
+        .bv-auth-input { width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid #ddd; border-radius:8px; margin-bottom:10px; font-size:14px; }
+        .bv-auth-error { display:none; color:#c62828; background:#ffebee; border-radius:8px; padding:9px; font-size:12px; margin-bottom:10px; }
+        .bv-auth-link { border:0; background:none; color:#00529b; cursor:pointer; padding:8px 0; font-size:12px; text-decoration:underline; }
+        .bv-auth-user { font-size:12px; color:#666; margin-bottom:10px; }
     </style>
 
     <div id="modal-bateolive-main">
 
         <!-- Profilo / Accesso -->
-        <div id="bv-profile-btn" class="bv-profile-btn" onclick="apriBateoLiveAuthModal()" title="Profilo / Accedi">
+        <button id="bv-profile-btn" class="bv-profile-btn" type="button" onclick="apriBateoLiveAuthModal()" title="Profilo / Accesso">
             <i class="fa-solid fa-user"></i>
-        </div>
+        </button>
 
         <div id="bv-map-wrapper">
             <div id="bv-map"></div>
@@ -397,32 +367,6 @@ export function initUIBateoLive() {
             <div id="bv-drawer-content"></div>
         </div>
 
-        <!-- Finestra Accesso / Profilo -->
-        <div id="bv-auth-modal" class="bv-auth-modal" onclick="chiudiBateoLiveAuthSeSfondo(event)">
-            <div class="bv-auth-card" onclick="event.stopPropagation()">
-                <button class="bv-auth-close" type="button" onclick="chiudiBateoLiveAuthModal()" aria-label="Chiudi">✕</button>
-
-                <div id="bv-auth-login-view">
-                    <h3 class="bv-auth-title"><i class="fa-solid fa-user"></i> Accedi</h3>
-                    <p class="bv-auth-subtitle">Accedi con lo stesso account utilizzato nell'app principale.</p>
-                    <label class="bv-auth-label" for="bv-auth-email">Email</label>
-                    <input id="bv-auth-email" class="bv-auth-input" type="email" autocomplete="email" placeholder="La tua email">
-                    <label class="bv-auth-label" for="bv-auth-password">Password</label>
-                    <input id="bv-auth-password" class="bv-auth-input" type="password" autocomplete="current-password" placeholder="La tua password">
-                    <div id="bv-auth-error" class="bv-auth-error"></div>
-                    <button id="bv-auth-login-btn" class="bv-auth-btn" type="button" onclick="eseguiBateoLiveLogin()"><i class="fa-solid fa-right-to-bracket"></i> Accedi</button>
-                    <span class="bv-auth-link" onclick="recuperaBateoLivePassword()">Password dimenticata?</span>
-                </div>
-
-                <div id="bv-auth-profile-view" class="bv-auth-profile">
-                    <h3 class="bv-auth-title"><i class="fa-solid fa-user-circle"></i> Profilo</h3>
-                    <div id="bv-auth-profile-name" class="bv-auth-profile-name">Utente</div>
-                    <div id="bv-auth-profile-email" class="bv-auth-profile-email"></div>
-                    <button class="bv-auth-logout" type="button" onclick="eseguiBateoLiveLogout()"><i class="fa-solid fa-right-from-bracket"></i> Esci</button>
-                </div>
-            </div>
-        </div>
-
         <!-- Sottomodale Configurazione Unità -->
         <div id="bv-unit-modal" class="bv-modal-overlay" onclick="chiudiBateoLiveModals(event)">
             <div class="bv-modal" onclick="event.stopPropagation()">
@@ -447,6 +391,20 @@ export function initUIBateoLive() {
             </div>
         </div>
 
+        <!-- Sottomodale Accesso -->
+        <div id="bv-auth-modal" class="bv-modal-overlay bv-auth-modal" onclick="chiudiBateoLiveAuthModal(event)">
+            <div class="bv-modal" onclick="event.stopPropagation()">
+                <h3 id="bv-auth-title" class="bv-auth-title"><i class="fa-solid fa-user"></i> Accedi</h3>
+                <div id="bv-auth-user" class="bv-auth-user" style="display:none;"></div>
+                <input id="bv-auth-email" class="bv-auth-input" type="email" placeholder="Email" autocomplete="username">
+                <input id="bv-auth-password" class="bv-auth-input" type="password" placeholder="Password" autocomplete="current-password">
+                <div id="bv-auth-error" class="bv-auth-error"></div>
+                <button id="bv-auth-login" class="bv-modal-btn" type="button" onclick="eseguiBateoLiveLogin()">Accedi</button>
+                <button id="bv-auth-reset" class="bv-auth-link" type="button" onclick="recuperaBateoLivePassword()">Password dimenticata?</button>
+                <button id="bv-auth-logout" class="bv-auth-link" type="button" onclick="eseguiBateoLiveLogout()" style="display:none;">Esci</button>
+            </div>
+        </div>
+
         <!-- Sottomodale Filtri -->
         <div id="bv-filter-modal" class="bv-modal-overlay" onclick="chiudiBateoLiveModals(event)">
             <div class="bv-modal" onclick="event.stopPropagation()">
@@ -458,6 +416,9 @@ export function initUIBateoLive() {
     </div>
     `;
     document.body.insertAdjacentHTML('beforeend', uiHTML);
+
+    // Stato iniziale autenticazione: il navigatore resta nascosto finché non si accede.
+    aggiornaBateoLiveAuthUI();
 
     // Inizializzazione Tape Bussola
     const tape = document.getElementById('bv-compass-tape');
@@ -492,7 +453,6 @@ export function initUIBateoLive() {
     window.toggleBvNavigatore = toggleBvNavigatore;
     window.apriBateoLiveAuthModal = apriBateoLiveAuthModal;
     window.chiudiBateoLiveAuthModal = chiudiBateoLiveAuthModal;
-    window.chiudiBateoLiveAuthSeSfondo = chiudiBateoLiveAuthSeSfondo;
     window.eseguiBateoLiveLogin = eseguiBateoLiveLogin;
     window.recuperaBateoLivePassword = recuperaBateoLivePassword;
     window.eseguiBateoLiveLogout = eseguiBateoLiveLogout;
@@ -535,165 +495,83 @@ export function initUIBateoLive() {
 }
 
 // ==========================================
-// AUTENTICAZIONE BateoLive
+// AUTENTICAZIONE BATEOLIVE
 // ==========================================
-function aggiornaUIBateoLiveAuth() {
+function aggiornaBateoLiveAuthUI() {
     const btn = document.getElementById('bv-profile-btn');
-    const loginView = document.getElementById('bv-auth-login-view');
-    const profileView = document.getElementById('bv-auth-profile-view');
-    const routeBtn = document.getElementById('bv-fab-nav');
-    if (!btn) return;
-
-    btn.classList.toggle('logged', !!bvFirebaseUser);
-    btn.title = bvFirebaseUser ? 'Profilo / Esci' : 'Accedi';
-
-    if (bvFirebaseUser) {
-        loginView.style.display = 'none';
-        profileView.style.display = 'block';
-        document.getElementById('bv-auth-profile-name').textContent =
-            [bvFirebaseProfile?.nome, bvFirebaseProfile?.cognome].filter(Boolean).join(' ') || bvFirebaseUser.email || 'Utente';
-        document.getElementById('bv-auth-profile-email').textContent = bvFirebaseUser.email || '';
-    } else {
-        loginView.style.display = 'block';
-        profileView.style.display = 'none';
-    }
-
-    // Il navigatore di turno esiste solo per utenti autenticati e solo quando il GPS è acceso.
-    if (routeBtn) {
-        const visible = !!bvFirebaseUser && !!watchId;
-        routeBtn.style.display = visible ? 'flex' : 'none';
-        if (!bvFirebaseUser && navVisibile) toggleBvNavigatore(false);
-    }
-}
-
-function apriBateoLiveAuthModal() {
     const modal = document.getElementById('bv-auth-modal');
+    const title = document.getElementById('bv-auth-title');
+    const userBox = document.getElementById('bv-auth-user');
+    const email = document.getElementById('bv-auth-email');
+    const password = document.getElementById('bv-auth-password');
+    const login = document.getElementById('bv-auth-login');
+    const reset = document.getElementById('bv-auth-reset');
+    const logout = document.getElementById('bv-auth-logout');
+    const nav = document.getElementById('bv-fab-nav');
+    if (!btn) return;
+    const user = bateoliveAuth.currentUser;
+    bateoliveAuthenticated = !!user;
+    btn.classList.toggle('logged', bateoliveAuthenticated);
+    if (nav) nav.style.display = bateoliveAuthenticated ? 'flex' : 'none';
     if (!modal) return;
-    aggiornaUIBateoLiveAuth();
-    const err = document.getElementById('bv-auth-error');
-    if (err) err.style.display = 'none';
-    modal.classList.add('active');
-    if (!bvFirebaseUser) setTimeout(() => document.getElementById('bv-auth-email')?.focus(), 50);
+    if (user) {
+        title.innerHTML = '<i class="fa-solid fa-circle-check"></i> Profilo';
+        userBox.textContent = user.email || ''; userBox.style.display = 'block';
+        email.style.display = 'none'; password.style.display = 'none'; login.style.display = 'none'; reset.style.display = 'none'; logout.style.display = 'block';
+    } else {
+        title.innerHTML = '<i class="fa-solid fa-user"></i> Accedi';
+        userBox.style.display = 'none'; email.style.display = 'block'; password.style.display = 'block'; login.style.display = 'block'; reset.style.display = 'block'; logout.style.display = 'none';
+    }
 }
-
-function chiudiBateoLiveAuthModal() {
-    document.getElementById('bv-auth-modal')?.classList.remove('active');
+function apriBateoLiveAuthModal() {
+    aggiornaBateoLiveAuthUI();
+    document.getElementById('bv-auth-error').style.display = 'none';
+    document.getElementById('bv-auth-modal').classList.add('active');
+    if (!bateoliveAuthenticated) setTimeout(() => document.getElementById('bv-auth-email').focus(), 50);
 }
-
-function chiudiBateoLiveAuthSeSfondo(e) {
-    if (e?.target?.id === 'bv-auth-modal') chiudiBateoLiveAuthModal();
+function chiudiBateoLiveAuthModal(e) {
+    if (e && e.target && e.target.classList && !e.target.classList.contains('bv-modal-overlay')) return;
+    document.getElementById('bv-auth-modal').classList.remove('active');
 }
-
 async function eseguiBateoLiveLogin() {
-    if (bvAuthLoginBusy || !bvFirebaseAuth) return;
     const email = document.getElementById('bv-auth-email').value.trim();
-    const password = document.getElementById('bv-auth-password').value;
+    const pwd = document.getElementById('bv-auth-password').value;
     const err = document.getElementById('bv-auth-error');
-    const btn = document.getElementById('bv-auth-login-btn');
     err.style.display = 'none';
-    if (!email || !password) {
-        err.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Inserisci email e password.';
-        err.style.display = 'block';
-        return;
-    }
-    bvAuthLoginBusy = true;
-    btn.disabled = true;
+    if (!email || !pwd) { err.textContent = 'Inserisci email e password.'; err.style.display = 'block'; return; }
     try {
-        await signInWithEmailAndPassword(bvFirebaseAuth, email, password);
-        document.getElementById('bv-auth-password').value = '';
+        await signInWithEmailAndPassword(bateoliveAuth, email, pwd);
         chiudiBateoLiveAuthModal();
     } catch (e) {
-        console.error('BateoLive login:', e);
-        err.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Email o password non corrette.';
-        err.style.display = 'block';
-    } finally {
-        bvAuthLoginBusy = false;
-        btn.disabled = false;
+        err.textContent = 'Email o password non valide.'; err.style.display = 'block';
+        console.error('Errore login BateoLive:', e);
     }
 }
-
 async function recuperaBateoLivePassword() {
-    if (!bvFirebaseAuth) return;
     const email = document.getElementById('bv-auth-email').value.trim();
-    if (!email) {
-        alert('Inserisci prima il tuo indirizzo email.');
-        return;
-    }
-    try {
-        await sendPasswordResetEmail(bvFirebaseAuth, email);
-        alert('Email di ripristino inviata. Controlla anche la cartella Spam.');
-    } catch (e) {
-        console.error('BateoLive reset password:', e);
-        alert('Non è stato possibile inviare il link. Verifica l'indirizzo email.');
-    }
+    const err = document.getElementById('bv-auth-error');
+    if (!email) { err.textContent = 'Inserisci prima il tuo indirizzo email.'; err.style.display = 'block'; return; }
+    try { await sendPasswordResetEmail(bateoliveAuth, email); alert('Email di ripristino inviata. Controlla anche la cartella Spam.'); }
+    catch (e) { err.textContent = 'Impossibile inviare il link di ripristino. Verifica l'indirizzo email.'; err.style.display = 'block'; }
 }
-
 async function eseguiBateoLiveLogout() {
-    if (!bvFirebaseAuth) return;
-    try {
-        await signOut(bvFirebaseAuth);
-        chiudiBateoLiveAuthModal();
-    } catch (e) {
-        console.error('BateoLive logout:', e);
-    }
+    await signOut(bateoliveAuth);
+    chiudiBateoLiveAuthModal();
+    if (document.getElementById('bv-fab-gps')?.classList.contains('active')) toggleBvGPS();
 }
 
-async function sincronizzaAutenticazioneBateoLive() {
-    if (!bvFirebaseAuth) initBvFirebase();
-    const auth = bvFirebaseAuth;
-    if (bvAuthUnsubscribe) bvAuthUnsubscribe();
-    bvAuthUnsubscribe = onAuthStateChanged(auth, async (user) => {
-        bvFirebaseUser = user;
-        bvFirebaseProfile = null;
-        bvAuthReady = true;
-
-        if (user) {
-            currentUserId = user.uid;
-            currentUserName = user.email || 'Collega';
-            try {
-                const snap = await getDoc(doc(bvFirebaseDb, 'utenti', user.uid));
-                if (snap.exists()) {
-                    bvFirebaseProfile = snap.data();
-                    currentUserName = bvFirebaseProfile.nome || currentUserName;
-                    userMansione = bvFirebaseProfile.mansione || null;
-                }
-            } catch (e) {
-                console.warn('BateoLive: profilo Firebase non disponibile', e);
-            }
-
-            // Se il GPS era già attivo, il navigatore può partire ora che l'utente è autenticato.
-            if (watchId && !gpsAttivo) avviaNavigatore();
-        } else {
-            currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
-            currentUserName = 'Collega';
-            userMansione = null;
-            // Logout = nessun navigatore e nessuna rotta. Il GPS generale può continuare a funzionare.
-            if (gpsAttivo) fermaNavigatore();
-        }
-        aggiornaUIBateoLiveAuth();
-    });
-}
+onAuthStateChanged(bateoliveAuth, () => aggiornaBateoLiveAuthUI());
 
 // ==========================================
 // LOGICA DI CONTROLLO MOTORE & GPS
 // ==========================================
 
 export async function avviaMotoreBateoLive(db, auth, userData, isAdmin) {
-    // In standalone inizializziamo Firebase direttamente; se il contenitore passa già
-    // un'istanza Auth, la riutilizziamo.
-    if (auth) {
-        bvFirebaseAuth = auth;
-        bvFirebaseDb = db || bvFirebaseDb;
-    } else {
-        initBvFirebase();
-    }
-
-    currentUserId = (bvFirebaseAuth && bvFirebaseAuth.currentUser) ? bvFirebaseAuth.currentUser.uid : 'user_' + Math.random().toString(36).substr(2, 9);
+    currentUserId = (auth && auth.currentUser) ? auth.currentUser.uid : 'user_' + Math.random().toString(36).substr(2, 9);
     currentUserName = (userData && userData.nome) ? userData.nome : "Collega";
     userMansione = (userData && userData.mansione) || null;
 
     initUIBateoLive();
-    await sincronizzaAutenticazioneBateoLive();
     document.getElementById('modal-bateolive-main').style.display = 'flex';
 
     await loadMapDependencies();
@@ -862,12 +740,8 @@ function toggleBvGPS() {
         fabCenter.style.display = 'flex';
         fabRotate.style.display = 'flex';
         document.getElementById('bv-fab-unit').style.display = 'flex';
-        document.getElementById('bv-fab-nav').style.display = bvFirebaseUser ? 'flex' : 'none';
-        if (bvFirebaseUser) {
-            avviaNavigatore();
-        } else {
-            fermaNavigatore();
-        }
+        document.getElementById('bv-fab-nav').style.display = bateoliveAuthenticated ? 'flex' : 'none';
+        if (bateoliveAuthenticated) avviaNavigatore();
         
         toggleBvCenterMap(true);
         speedHistory = [];
@@ -1058,7 +932,6 @@ function chiudiBateoLive() {
     document.getElementById('bv-fab-rotate').style.display = 'none';
     document.getElementById('bv-fab-nav').style.display = 'none';
     document.getElementById('bv-fab-unit').style.display = 'none';
-    chiudiBateoLiveAuthModal();
     fermaNavigatore();
     document.getElementById('bv-fab-gps').classList.remove('active');
     
@@ -2253,10 +2126,6 @@ function azzeraStatoNavigatore() {
 
 // chiamata quando si accende il GPS: il tasto fa-route parte attivo
 function avviaNavigatore() {
-    if (!bvFirebaseUser) {
-        navVisibile = false;
-        return;
-    }
     gpsAttivo = true;
     navVisibile = true;
     azzeraStatoNavigatore();
@@ -2280,12 +2149,7 @@ function fermaNavigatore() {
 
 // tasto fa-route: mostra/nasconde dati del navigatore e rotta, lasciando solo la velocità
 function toggleBvNavigatore(forceState = null) {
-    if (!bvFirebaseUser) {
-        navVisibile = false;
-        const b = navEl('bv-fab-nav');
-        if (b) b.style.display = 'none';
-        return;
-    }
+    if (!bateoliveAuthenticated) { apriBateoLiveAuthModal(); return; }
     navVisibile = forceState !== null ? forceState : !navVisibile;
     navEl('bv-fab-nav').classList.toggle('active', navVisibile);
     navEl('bv-hud-speed').classList.toggle('nav-on', navVisibile);
