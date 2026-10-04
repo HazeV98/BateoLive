@@ -25,6 +25,7 @@ import {
     turnoEffettivo, unisciRebecchini, ferieDelGiorno, haVarianti, caricaDatiTurni
 } from "./turni-core.js"; // va importato sempre con questo stesso percorso (vedi turni-core.js)
 
+import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js"; // stessa versione del calendario: così le istanze sono compatibili
 const API_URL = 'https://api.bateolive.stream';
 let globalBoats = [];
 let globalStops = [];
@@ -663,6 +664,8 @@ export async function avviaMotoreBateoLive(db, auth, userData, isAdmin) {
     currentUserId = (auth && auth.currentUser) ? auth.currentUser.uid : 'user_' + Math.random().toString(36).substr(2, 9);
     currentUserName = (userData && userData.nome) ? userData.nome : "Collega";
     userMansione = (userData && userData.mansione) || null;
+    firestoreTurni.db = db || null;
+    firestoreTurni.auth = bateoliveAuth;
 
     initUIBateoLive();
     document.getElementById('modal-bateolive-main').style.display = 'flex';
@@ -1804,12 +1807,94 @@ async function fetchJson(url) {
     return dati;
 }
 
+// ---------------------------------------------------------------- stato dei turni dell'utente (da Firestore)
+// Lo stato del calendario (turno di base, variazioni, ferie, mansione) sta su Firestore: calendario/{uid}.
+// Si legge da lì, così il navigatore funziona anche su un dispositivo dove il calendario non è mai stato aperto.
+// Il localStorage ('myTurniApp', scritto dal calendario) resta solo come copia di riserva se Firestore non risponde.
+// Questo modulo non scrive mai su Firestore né sul localStorage.
+const STATO_TURNI_TTL_MS = 5 * 60 * 1000;   // dopo tanto si rilegge (così le modifiche fatte nel calendario arrivano)
+const STATO_TURNI_RITENTA_MS = 30 * 1000;   // se si è ripiegato sulla copia locale si riprova prima
+const STATO_TURNI_TIMEOUT_MS = 6000;        // oltre questo Firestore si considera non raggiungibile
+const firestoreTurni = { db: null, auth: null };
+let statoTurni = null, statoTurniUid = null, statoTurniTs = 0, statoTurniInCorso = null;
+let mansioneProfilo = null, mansioneProfiloUid = null;
+const dbTurni = () => firestoreTurni.db || getFirestore(bateoliveFirebaseApp);
+
+function conTimeout(promessa, ms) {
+    let t;
+    return Promise.race([promessa, new Promise((_, rifiuta) => { t = setTimeout(() => rifiuta(new Error('timeout')), ms); })])
+        .finally(() => clearTimeout(t));
+}
+
+function statoLocale() {
+    try { const s = JSON.parse(localStorage.getItem('myTurniApp')); return (s && typeof s === 'object') ? s : null; }
+    catch (e) { return null; }
+}
+
+// stessa precedenza del calendario: mansione dello stato, poi quella del profilo attivo
+function mansioneDaStato(s) {
+    if (!s) return null;
+    if (s.mansione) return s.mansione;
+    const p = s.profiloAttivoId && s.profiliSalvati && s.profiliSalvati[s.profiloAttivoId];
+    return (p && p.mansione) || null;
+}
+
+async function uidTurni() {
+    const a = firestoreTurni.auth;
+    if (!a) return null;
+    try { if (a.authStateReady) await conTimeout(a.authStateReady(), STATO_TURNI_TIMEOUT_MS); } catch (e) { /* si prosegue con quello che c'è */ }
+    return (a.currentUser && a.currentUser.uid) || null;
+}
+
+// documento del calendario dell'utente; null se non esiste o è stato cancellato
+async function leggiCalendarioCloud(uid) {
+    const db = dbTurni();
+    if (!db || !uid) return null;
+    const snap = await conTimeout(getDoc(doc(db, 'calendario', uid)), STATO_TURNI_TIMEOUT_MS);
+    const dati = snap.exists() ? snap.data() : null;
+    return (dati && !dati.deleted) ? dati : null;
+}
+
+// ultima risorsa per la mansione: il profilo utente (utenti/{uid}), come fa il calendario
+async function mansioneDalProfilo() {
+    const uid = await uidTurni();
+    if (!uid) return null;
+    if (mansioneProfiloUid === uid) return mansioneProfilo;
+    try {
+        const db = dbTurni();
+        const snap = db ? await conTimeout(getDoc(doc(db, 'utenti', uid)), STATO_TURNI_TIMEOUT_MS) : null;
+        mansioneProfilo = (snap && snap.exists() && snap.data().mansione) || null;
+        mansioneProfiloUid = uid;
+    } catch (e) { console.warn("Turni: profilo utente non leggibile", e); }
+    return mansioneProfilo;
+}
+
+async function caricaStatoTurni(forza = false) {
+    const uid = await uidTurni();
+    if (!forza && statoTurni && statoTurniUid === uid && Date.now() - statoTurniTs < STATO_TURNI_TTL_MS) return statoTurni;
+    if (statoTurniInCorso && statoTurniInCorso.uid === uid) return statoTurniInCorso.p;
+
+    const p = (async () => {
+        let stato = null;
+        try { stato = await leggiCalendarioCloud(uid); }
+        catch (e) { console.warn("Turni: Firestore non raggiungibile, uso la copia locale", e); }
+        const daCloud = !!stato;
+        if (!stato) stato = statoLocale() || {};
+        statoTurni = stato; statoTurniUid = uid;
+        statoTurniTs = Date.now() - (daCloud ? 0 : STATO_TURNI_TTL_MS - STATO_TURNI_RITENTA_MS);
+        return stato;
+    })();
+    statoTurniInCorso = { uid, p };
+    try { return await p; }
+    finally { if (statoTurniInCorso && statoTurniInCorso.p === p) statoTurniInCorso = null; }
+}
+
 // Turno di un giorno: { data, codice, stato: 'ok' | 'riposo' | 'varianti' | 'errore', attivita[], turno }
 async function turnoDelGiorno(dStr) {
-    let state = {};
-    try { state = JSON.parse(localStorage.getItem('myTurniApp')) || {}; } catch (e) { }
+    const state = await caricaStatoTurni();
+    const mansione = mansioneDaStato(state) || userMansione || await mansioneDalProfilo();
     const manuale = !!(state.variazioni && state.variazioni[dStr]);
-    let codice = turnoEffettivo(dStr, state, datiTurni, userMansione);
+    let codice = turnoEffettivo(dStr, state, datiTurni, mansione);
     // ferie previste dalla rotazione ferie (come nel calendario): senza variazione manuale il turno diventa FEP
     if (!manuale && datiTurni && !["RI", "AL"].includes(String(codice).toUpperCase())) {
         const ferie = ferieDelGiorno(state, dStr, datiTurni.ferie);
