@@ -552,7 +552,7 @@ async function recuperaBateoLivePassword() {
     const err = document.getElementById('bv-auth-error');
     if (!email) { err.textContent = 'Inserisci prima il tuo indirizzo email.'; err.style.display = 'block'; return; }
     try { await sendPasswordResetEmail(bateoliveAuth, email); alert('Email di ripristino inviata. Controlla anche la cartella Spam.'); }
-    catch (e) { err.textContent = 'Impossibile inviare il link di ripristino. Verifica l'indirizzo email.'; err.style.display = 'block'; }
+    catch (e) { err.textContent = "Impossibile inviare il link di ripristino. Verifica l'indirizzo email."; err.style.display = 'block'; }
 }
 async function eseguiBateoLiveLogout() {
     await signOut(bateoliveAuth);
