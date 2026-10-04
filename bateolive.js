@@ -58,6 +58,16 @@ let customLine = '';
 let followUser = false; 
 let courseUp = false;
 
+// Modalità Rewind (replay dello storico): vedi sezione REWIND in fondo al file
+const rewind = {
+    attivo: false, apertura: false, giorni: new Map(), date: null, min: 0, max: 0, t: 0,
+    playing: false, speed: 10, speedIdx: 3, dragging: false, editing: false,
+    boats: new Map(), markers: {}, layer: null, nVisibili: 0,
+    loaded: new Set(), loading: new Set(), pending: 0, sessione: 0, errore: false,
+    raf: null, lastTs: 0, lastDraw: 0, lastPota: 0, dirty: true, dt: null,
+    cal: { y: 0, m: 0 }
+};
+
 const ACTV_COLORS = {
     '1': { bg: '#ffffff', text: '#000000', border: '#000000' },
     '2': { bg: '#e3001b', text: '#ffffff', border: '#e3001b' },
@@ -288,6 +298,51 @@ export function initUIBateoLive() {
         .bv-auth-error { display:none; color:#c62828; background:#ffebee; border-radius:8px; padding:9px; font-size:12px; margin-bottom:10px; }
         .bv-auth-link { border:0; background:none; color:#00529b; cursor:pointer; padding:8px 0; font-size:12px; text-decoration:underline; }
         .bv-auth-user { font-size:12px; color:#666; margin-bottom:10px; }
+
+        /* ---------- Rewind ---------- */
+        #modal-bateolive-main.rewind-on .bv-fab-container,
+        #modal-bateolive-main.rewind-on .bv-hud-compass,
+        #modal-bateolive-main.rewind-on .bv-hud-speed,
+        #modal-bateolive-main.rewind-on .bv-hud-status,
+        #modal-bateolive-main.rewind-on .bv-error-banner { display: none !important; }
+        #modal-bateolive-main.rewind-on #bv-drawer { top: 72px; bottom: 190px; }
+
+        .bv-rw-datebar { display: none; position: absolute; top: 16px; left: 70px; right: 16px; max-width: 420px; height: 44px; z-index: 1500; align-items: center; justify-content: center; gap: 10px; padding: 0 16px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.8); border-radius: 22px; background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 3px 12px rgba(0,0,0,0.25); color: #00529b; font: 700 14px 'Inter', sans-serif; cursor: pointer; }
+        .bv-rw-datebar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .bv-rw-datebar i:last-child { font-size: 11px; opacity: 0.7; }
+        #modal-bateolive-main.rewind-on .bv-rw-datebar { display: flex; }
+
+        .bv-rw-panel { display: none; position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(560px, calc(100% - 24px)); box-sizing: border-box; z-index: 1500; padding: 10px 16px 12px; border-radius: 20px; background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 4px 18px rgba(0,0,0,0.25); font-family: 'Inter', sans-serif; }
+        #modal-bateolive-main.rewind-on .bv-rw-panel { display: block; }
+        .bv-rw-slider-wrap { position: relative; padding-top: 40px; }
+        .bv-rw-bubble { position: absolute; top: 0; left: 0; transform: translateX(-50%); background: #00529b; border-radius: 10px; padding: 4px 6px; box-shadow: 0 3px 10px rgba(0,0,0,0.3); z-index: 2; }
+        .bv-rw-bubble::after { content: ''; position: absolute; top: 100%; left: calc(50% + var(--arrow, 0px)); transform: translateX(-50%); border: 6px solid transparent; border-top-color: #00529b; }
+        .bv-rw-bubble input { width: 96px; border: 0; background: transparent; color: #fff; text-align: center; font: 800 16px 'Inter', sans-serif; font-variant-numeric: tabular-nums; outline: none; padding: 2px 0; margin: 0; box-sizing: border-box; }
+        .bv-rw-bubble input:focus { background: rgba(255,255,255,0.18); border-radius: 6px; }
+        .bv-rw-range { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 28px; margin: 0; background: transparent; cursor: pointer; }
+        .bv-rw-range:focus { outline: none; }
+        .bv-rw-range::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(to right, #00529b var(--p, 0%), #cfd8e3 var(--p, 0%)); }
+        .bv-rw-range::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -8px; border-radius: 50%; background: #fff; border: 3px solid #00529b; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+        .bv-rw-range::-moz-range-track { height: 6px; border-radius: 3px; background: #cfd8e3; }
+        .bv-rw-range::-moz-range-progress { height: 6px; border-radius: 3px; background: #00529b; }
+        .bv-rw-range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 3px solid #00529b; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+        .bv-rw-ends { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: #777; margin-top: 2px; font-variant-numeric: tabular-nums; }
+        .bv-rw-controls { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 8px; }
+        .bv-rw-controls button { border: 0; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; font-size: 18px; color: #00529b; background: rgba(0,82,155,0.1); }
+        .bv-rw-controls button:disabled { opacity: 0.35; cursor: default; }
+        #bv-rw-play { width: 58px; height: 58px; font-size: 22px; background: #00529b; color: #fff; box-shadow: 0 4px 12px rgba(0,82,155,0.4); }
+        .bv-rw-speed { text-align: center; margin-top: 6px; font-size: 12px; font-weight: 700; color: #555; }
+
+        .bv-rw-cal { max-width: 340px; }
+        .bv-rw-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .bv-rw-cal-head button { width: 36px; height: 36px; border: 0; border-radius: 50%; background: rgba(0,82,155,0.1); color: #00529b; cursor: pointer; }
+        .bv-rw-cal-head button:disabled { opacity: 0.3; cursor: default; }
+        .bv-rw-cal-title { font-weight: 700; color: #00529b; font-size: 15px; }
+        .bv-rw-cal-dow, .bv-rw-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+        .bv-rw-cal-dow span { font-size: 11px; font-weight: 700; color: #888; padding: 4px 0; }
+        .bv-rw-day { aspect-ratio: 1; border: 0; border-radius: 50%; padding: 0; background: transparent; color: #c2c7cf; font: 600 14px 'Inter', sans-serif; cursor: default; }
+        .bv-rw-day.has { color: #00529b; background: rgba(0,82,155,0.1); font-weight: 800; cursor: pointer; }
+        .bv-rw-day.sel { background: #00529b; color: #fff; }
     </style>
 
     <div id="modal-bateolive-main">
@@ -355,6 +410,7 @@ export function initUIBateoLive() {
             <div id="bv-fab-unit" class="bv-fab" onclick="apriBateoLiveUnitModal()" title="Configura Unità" style="display: none;">
                 <i class="fa-solid fa-ship"></i>
             </div>
+            <div id="bv-fab-rewind" class="bv-fab" onclick="apriRewind()" title="Rewind: rivedi i movimenti passati"><i class="fa-solid fa-clock-rotate-left"></i></div>
             <div class="bv-fab" onclick="apriBateoLiveSearchModal()" title="Cerca Mezzo o Fermata"><i class="fa-solid fa-magnifying-glass"></i></div>
             <div class="bv-fab" onclick="apriBateoLiveFilterModal()" title="Filtra Linee"><i class="fa-solid fa-filter"></i></div>
         </div>
@@ -365,6 +421,39 @@ export function initUIBateoLive() {
                 <button id="bv-close-btn" onclick="closeBateoLiveDrawer()">✖</button>
             </div>
             <div id="bv-drawer-content"></div>
+        </div>
+
+        <!-- Rewind: barra data, controlli di riproduzione, calendario -->
+        <button id="bv-rw-datebar" class="bv-rw-datebar" type="button" aria-label="Scegli la data">
+            <i class="fa-regular fa-calendar"></i><span id="bv-rw-datetxt">--</span><i class="fa-solid fa-chevron-down"></i>
+        </button>
+
+        <div id="bv-rw-panel" class="bv-rw-panel">
+            <div id="bv-rw-slider-wrap" class="bv-rw-slider-wrap">
+                <div id="bv-rw-bubble" class="bv-rw-bubble">
+                    <input id="bv-rw-time" type="text" inputmode="numeric" maxlength="8" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Orario">
+                </div>
+                <input id="bv-rw-range" class="bv-rw-range" type="range" min="0" max="1" step="1" value="0" aria-label="Scorri nel tempo">
+            </div>
+            <div class="bv-rw-ends"><span id="bv-rw-min">--:--</span><span id="bv-rw-max">--:--</span></div>
+            <div class="bv-rw-controls">
+                <button id="bv-rw-slower" type="button" aria-label="Più lento"><i class="fa-solid fa-backward"></i></button>
+                <button id="bv-rw-play" type="button" aria-label="Play / Pausa"><i class="fa-solid fa-play"></i></button>
+                <button id="bv-rw-faster" type="button" aria-label="Più veloce"><i class="fa-solid fa-forward"></i></button>
+            </div>
+            <div id="bv-rw-speed" class="bv-rw-speed"></div>
+        </div>
+
+        <div id="bv-rw-cal-modal" class="bv-modal-overlay">
+            <div class="bv-modal bv-rw-cal">
+                <div class="bv-rw-cal-head">
+                    <button id="bv-rw-cal-prev" type="button" aria-label="Mese precedente"><i class="fa-solid fa-chevron-left"></i></button>
+                    <span id="bv-rw-cal-title" class="bv-rw-cal-title"></span>
+                    <button id="bv-rw-cal-next" type="button" aria-label="Mese successivo"><i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+                <div class="bv-rw-cal-dow"><span>L</span><span>M</span><span>M</span><span>G</span><span>V</span><span>S</span><span>D</span></div>
+                <div id="bv-rw-cal-grid" class="bv-rw-cal-grid"></div>
+            </div>
         </div>
 
         <!-- Sottomodale Configurazione Unità -->
@@ -456,8 +545,11 @@ export function initUIBateoLive() {
     window.eseguiBateoLiveLogin = eseguiBateoLiveLogin;
     window.recuperaBateoLivePassword = recuperaBateoLivePassword;
     window.eseguiBateoLiveLogout = eseguiBateoLiveLogout;
+    window.apriRewind = apriRewind;
+    window.chiudiRewind = chiudiRewind;
 
     document.getElementById('bv-nav-toggle').addEventListener('click', toggleListaFermate);
+    initRewindUI();
 
     document.getElementById('bv-search-input').addEventListener('input', async function(e) {
         const q = e.target.value.toLowerCase().trim();
@@ -524,6 +616,7 @@ function aggiornaBateoLiveAuthUI() {
     }
 }
 function apriBateoLiveAuthModal() {
+    if (rewind.attivo) { chiudiRewind(); return; } // in rewind il tasto profilo è il tasto indietro
     aggiornaBateoLiveAuthUI();
     document.getElementById('bv-auth-error').style.display = 'none';
     document.getElementById('bv-auth-modal').classList.add('active');
@@ -788,7 +881,8 @@ function elaboraBvPosizioneGPS(position) {
     if (!userMarker) {
         userMarker = L.marker([coords.latitude, coords.longitude], {
             icon: userIcon, zIndexOffset: 2000
-        }).addTo(map);
+        });
+        if (!rewind.attivo) userMarker.addTo(map);
     } else {
         userMarker.setLatLng([coords.latitude, coords.longitude]);
         userMarker.setIcon(userIcon);
@@ -835,11 +929,12 @@ function inviaBvPosizionePersonale(lat, lon, speed, heading) {
 }
 
 async function sincronizzaPosizioneAltriUtenti() {
-    if (!map || !currentUserId) return;
+    if (!map || !currentUserId || rewind.attivo) return;
     try {
         const response = await fetch(`${API_URL}/api/users/live`);
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const users = await response.json();
+        if (rewind.attivo) return;
         const activeIds = Object.keys(users);
 
         const nextHiddenActvUnitNames = new Set();
@@ -923,6 +1018,7 @@ function unlockBateoLiveMap() {
 }
 
 function chiudiBateoLive() {
+    if (rewind.attivo) chiudiRewind();
     document.getElementById('modal-bateolive-main').style.display = 'none';
     closeBateoLiveDrawer();
     if (watchId) navigator.geolocation.clearWatch(watchId);
@@ -1203,6 +1299,7 @@ async function renderBoatDrawer(boat) {
 }
 
 async function renderStopDrawer(stop) {
+    if (rewind.attivo) return; // in rewind le fermate non mostrano i dati live
     activeSelection = { type: 'stop', data: stop };
     try {
         const res = await fetch(`${API_URL}/api/stop/${stop.id}`);
@@ -1344,11 +1441,12 @@ function aggiornaVisibilitaBarcheActv() {
 }
 
 async function fetchAndUpdateBoats() {
-    if (!map) return;
+    if (!map || rewind.attivo) return;
     try {
         const response = await fetch(`${API_URL}/api/vaporetti/live`);
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const boats = await response.json();
+        if (rewind.attivo) return;
         globalBoats = boats;
         showBateoLiveError(false);
 
@@ -2003,7 +2101,7 @@ function coloreRotta(linea) {
 }
 
 function aggiornaRottaMappa() {
-    const voluta = (map && gpsAttivo && navVisibile && percorso && percorso.geometria && percorsoStato === 'ok') ? attKey : null;
+    const voluta = (!rewind.attivo && map && gpsAttivo && navVisibile && percorso && percorso.geometria && percorsoStato === 'ok') ? attKey : null;
     if (voluta === rottaKey) return;
     if (rottaLayer && map) { map.removeLayer(rottaLayer); }
     rottaLayer = null;
@@ -2158,4 +2256,491 @@ function toggleBvNavigatore(forceState = null) {
     if (navVisibile) renderNavigatore();
 }
 
-export const _test = { costruisciPercorso, proietta, orarioProgrammato, trovaProssima, trovaProssimaDaOrario, alongDaOrario, aPiano, formattaRitardo, hhmm };
+// ==========================================
+// REWIND: rivedi come si sono mossi i mezzi in un giorno registrato dal server.
+// Il server filtra e riduce i dati (/api/history/...): qui si scaricano solo finestre da 10 minuti,
+// si uniscono per battello e si interpola linearmente tra una posizione registrata e la successiva.
+// ==========================================
+const RW_TZ = 'Europe/Rome';           // i giorni dello storico seguono il fuso del server
+const RW_VELOCITA = [1, 2, 5, 10, 30, 60, 120, 300];
+const RW_VELOCITA_INIZIALE = 3;        // x10
+const RW_CHUNK = 600;                  // secondi di storico per richiesta
+const RW_MARGINE = 60;                 // ogni richiesta copre un minuto in più per lato, così a cavallo dei blocchi si interpola senza buchi
+const RW_STEP = 10;                    // secondi minimi tra due punti dello stesso battello
+const RW_GAP_MAX = 150;                // oltre questo buco tra due punti non si interpola (il battello non era registrato)
+const RW_HOLD = 90;                    // dopo l'ultimo punto noto il battello resta fermo ancora per tanto, poi sparisce
+const RW_MEMORIA = 5400;               // dati più lontani di così dalla posizione attuale vengono scartati (più del massimo precaricamento)
+const RW_FPS_MS = 33;
+
+const rwFmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: RW_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+});
+
+// unix -> data e ora "a muro" in Europe/Rome
+function rwParti(unix) {
+    const o = {};
+    for (const p of rwFmt.formatToParts(new Date(unix * 1000))) o[p.type] = p.value;
+    return { date: `${o.year}-${o.month}-${o.day}`, h: +o.hour, m: +o.minute, s: +o.second };
+}
+function rwOffset(unix) {
+    const p = rwParti(unix);
+    const [y, mo, d] = p.date.split('-').map(Number);
+    return Date.UTC(y, mo - 1, d, p.h, p.m, p.s) / 1000 - unix;
+}
+// "2026-10-06" + ora a muro -> unix (corretto anche nei giorni del cambio ora)
+function romeToUnix(date, h = 0, m = 0, s = 0) {
+    const [y, mo, d] = date.split('-').map(Number);
+    const asUTC = Date.UTC(y, mo - 1, d, h, m, s) / 1000;
+    const prima = asUTC - rwOffset(asUTC);
+    return asUTC - rwOffset(prima);
+}
+function rwOra(unix, conSecondi = false) {
+    const p = rwParti(unix);
+    return `${pad2(p.h)}:${pad2(p.m)}` + (conSecondi ? ':' + pad2(p.s) : '');
+}
+// "10:30", "10.30.15", "1030", "930", "103015" -> {h, m, s}; null se non valido
+function rwParseOra(txt) {
+    const s = String(txt || '').trim();
+    let h, m, sec = 0;
+    let mt = /^(\d{1,2})[:.,\s](\d{1,2})(?:[:.,\s](\d{1,2}))?$/.exec(s);
+    if (mt) { h = +mt[1]; m = +mt[2]; sec = +(mt[3] || 0); }
+    else if (/^\d{3,6}$/.test(s)) {
+        const d = (s.length === 3 || s.length === 5) ? '0' + s : s;
+        h = +d.slice(0, 2); m = +d.slice(2, 4); sec = d.length === 6 ? +d.slice(4, 6) : 0;
+    } else return null;
+    if (h > 23 || m > 59 || sec > 59) return null;
+    return { h, m, s: sec };
+}
+// unisce due liste di punti [t, lat, lon, ritardo] ordinate per tempo, senza doppioni
+function rwUnisci(a, b) {
+    const tutti = a.concat(b).sort((x, y) => x[0] - y[0]);
+    const out = [];
+    for (const p of tutti) if (!out.length || out[out.length - 1][0] !== p[0]) out.push(p);
+    return out;
+}
+// posizione di un battello all'istante t: interpolazione lineare tra due punti registrati
+function rwPosizione(pts, t) {
+    const n = pts.length;
+    if (!n || t < pts[0][0]) return null;
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (pts[mid][0] <= t) lo = mid; else hi = mid - 1; }
+    const a = pts[lo], b = pts[lo + 1];
+    if (!b || b[0] - a[0] > RW_GAP_MAX) return (t - a[0] <= RW_HOLD) ? [a[1], a[2]] : null;
+    const f = (t - a[0]) / (b[0] - a[0]);
+    return [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+}
+const rwChunk = (t) => Math.floor(t / RW_CHUNK);
+
+// celle del calendario di un mese (settimana da lunedì): null = vuota, altrimenti {key, d, has, sel}
+function rwCalGriglia(y, m, giorni, selezionato) {
+    const vuote = (new Date(y, m, 1).getDay() + 6) % 7;
+    const n = new Date(y, m + 1, 0).getDate();
+    const celle = Array(vuote).fill(null);
+    for (let d = 1; d <= n; d++) {
+        const key = `${y}-${pad2(m + 1)}-${pad2(d)}`;
+        celle.push({ key, d, has: giorni.has(key), sel: key === selezionato });
+    }
+    return celle;
+}
+
+function rwAvviso(msg) {
+    showBateoLiveError(true, msg);
+    setTimeout(() => showBateoLiveError(false), 3500);
+}
+
+// Mezzi live, utente e rotta spariscono dalla mappa mentre si è in rewind (si rimettono all'uscita)
+function rwNascondiLive() {
+    Object.values(boatMarkers).forEach(m => map.removeLayer(m));
+    Object.values(otherUsersMarkers).forEach(m => map.removeLayer(m));
+    if (userMarker) map.removeLayer(userMarker);
+    if (rottaLayer) { map.removeLayer(rottaLayer); rottaLayer = null; rottaKey = null; }
+}
+function rwRimettiLive() {
+    Object.values(boatMarkers).forEach(m => { if (!map.hasLayer(m)) m.addTo(map); });
+    Object.values(otherUsersMarkers).forEach(m => { if (!map.hasLayer(m)) m.addTo(map); });
+    if (userMarker && !map.hasLayer(userMarker)) userMarker.addTo(map);
+}
+
+async function apriRewind() {
+    if (!map || rewind.attivo || rewind.apertura) return;
+    rewind.apertura = true;
+    let giorni;
+    try {
+        const res = await fetch(`${API_URL}/api/history/days`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        giorni = (await res.json()).filter(g => g && Array.isArray(g.hours) && g.hours.length);
+    } catch (e) {
+        console.error('Rewind: storico non raggiungibile', e);
+        rewind.apertura = false;
+        rwAvviso('Impossibile caricare lo storico. Riprova.');
+        return;
+    }
+    rewind.apertura = false;
+    if (!giorni.length) { rwAvviso('Nessuna registrazione disponibile per ora.'); return; }
+    giorni.sort((a, b) => b.date.localeCompare(a.date));
+
+    closeBateoLiveDrawer();
+    chiudiBateoLiveModals({ target: { classList: { contains: () => true } } });
+    if (courseUp) toggleBvMapRotation(false);
+    if (followUser) toggleBvCenterMap(false);
+
+    rewind.attivo = true;
+    rwNascondiLive();
+    rewind.giorni = new Map(giorni.map(g => [g.date, g]));
+    rewind.layer = L.layerGroup().addTo(map);
+    rewind.speedIdx = RW_VELOCITA_INIZIALE;
+    rewind.speed = RW_VELOCITA[rewind.speedIdx];
+    rewind.playing = false;
+
+    document.getElementById('modal-bateolive-main').classList.add('rewind-on');
+    const btn = document.getElementById('bv-profile-btn');
+    btn.innerHTML = '<i class="fa-solid fa-arrow-left"></i>';
+    btn.title = 'Torna alla mappa';
+
+    rwImpostaGiorno(giorni[0].date);
+    rwSetPlaying(false);
+    rewind.lastTs = 0;
+    rewind.raf = requestAnimationFrame(rwTick);
+}
+
+function chiudiRewind() {
+    if (!rewind.attivo) return;
+    rewind.attivo = false;
+    rewind.playing = false;
+    if (rewind.raf) cancelAnimationFrame(rewind.raf);
+    rewind.raf = null;
+    rewind.sessione++;                 // scarta i caricamenti ancora in corso
+    clearTimeout(rewind.dt);
+    rwChiudiCal();
+    closeBateoLiveDrawer();
+    if (rewind.layer) { map.removeLayer(rewind.layer); rewind.layer = null; }
+    rewind.markers = {};
+    rewind.boats = new Map();
+    rewind.loaded.clear();
+    rewind.loading.clear();
+
+    document.getElementById('modal-bateolive-main').classList.remove('rewind-on');
+    const btn = document.getElementById('bv-profile-btn');
+    btn.innerHTML = '<i class="fa-solid fa-user"></i>';
+    btn.title = 'Profilo / Accesso';
+
+    rwRimettiLive();
+    fetchAndUpdateBoats();
+    sincronizzaPosizioneAltriUtenti();
+}
+
+// Cambia giorno (o imposta il primo): azzera i dati, calcola l'intervallo della barra e carica i blocchi attorno a tInit
+function rwImpostaGiorno(date, tInit) {
+    rewind.sessione++;
+    rewind.date = date;
+    rewind.boats = new Map();
+    rewind.loaded.clear();
+    rewind.loading.clear();
+    rewind.pending = 0;
+    rewind.errore = false;
+    if (rewind.layer) rewind.layer.clearLayers();
+    rewind.markers = {};
+
+    const ore = rewind.giorni.get(date).hours.map(Number).sort((a, b) => a - b);
+    rewind.min = romeToUnix(date, ore[0]);
+    rewind.max = romeToUnix(date, ore[ore.length - 1] + 1);
+    const ora = Math.floor(Date.now() / 1000);
+    if (rewind.min < ora && ora < rewind.max) rewind.max = ora;      // oggi: non oltre adesso
+
+    let t = tInit;
+    if (t === undefined) t = (ora > rewind.min && ora <= rewind.max) ? ora - 1800 : rewind.min;
+    rewind.t = Math.min(Math.max(t, rewind.min), rewind.max);
+
+    const d = new Date(...date.split('-').map((v, i) => i === 1 ? v - 1 : +v));
+    const txt = d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    document.getElementById('bv-rw-datetxt').textContent = txt.charAt(0).toUpperCase() + txt.slice(1);
+    document.getElementById('bv-rw-min').textContent = rwOra(rewind.min);
+    document.getElementById('bv-rw-max').textContent = rwOra(rewind.max);
+    rwSetPlaying(false);
+    rwEnsure(rewind.t, 2);
+    rewind.dirty = true;
+    rwAggiornaUI();
+}
+
+// ---------------------------------------------------------------- caricamento dati
+function rwEnsure(t, avanti = 1) {
+    for (let c = rwChunk(t); c <= rwChunk(t) + avanti; c++) {
+        if ((c + 1) * RW_CHUNK < rewind.min || c * RW_CHUNK > rewind.max) continue;
+        rwCaricaChunk(c);
+    }
+}
+
+async function rwCaricaChunk(c) {
+    if (rewind.loaded.has(c) || rewind.loading.has(c)) return;
+    const sessione = rewind.sessione, date = rewind.date;
+    rewind.loading.add(c);
+    rewind.pending++;
+    rwAggiornaEtichetta();
+    try {
+        const a = rwParti(c * RW_CHUNK - RW_MARGINE), b = rwParti((c + 1) * RW_CHUNK + RW_MARGINE);
+        const from = a.date === date ? `${pad2(a.h)}:${pad2(a.m)}` : '00:00';
+        const to = b.date === date ? `${pad2(b.h)}:${pad2(b.m)}` : null;
+        let url = `${API_URL}/api/history/${date}/frames?from=${from}&step=${RW_STEP}`;
+        if (to && to > from) url += `&to=${to}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const dati = await res.json();
+        if (sessione !== rewind.sessione) return;                 // nel frattempo si è cambiato giorno o si è usciti
+        for (const [id, bt] of Object.entries(dati.boats || {})) {
+            let tb = rewind.boats.get(id);
+            if (!tb) { tb = { line: bt.line, pts: [] }; rewind.boats.set(id, tb); }
+            if (bt.line && bt.line !== '-') tb.line = bt.line;
+            tb.pts = rwUnisci(tb.pts, bt.pts);
+        }
+        rewind.loaded.add(c);
+        rewind.errore = false;
+        rewind.dirty = true;
+    } catch (e) {
+        if (sessione !== rewind.sessione) return;
+        console.error('Rewind: errore caricamento', e);
+        rewind.errore = true;
+        rwSetPlaying(false);
+    } finally {
+        if (sessione === rewind.sessione) {
+            rewind.loading.delete(c);
+            rewind.pending = Math.max(0, rewind.pending - 1);
+            rwAggiornaEtichetta();
+        }
+    }
+}
+
+// libera memoria: via i dati troppo lontani dall'istante attuale (si riscaricano se servono)
+function rwPota() {
+    const c0 = rwChunk(rewind.t - RW_MEMORIA), c1 = rwChunk(rewind.t + RW_MEMORIA);
+    rewind.boats.forEach((b, id) => {
+        b.pts = b.pts.filter(p => { const c = rwChunk(p[0]); return c >= c0 && c <= c1; });
+        if (!b.pts.length) rewind.boats.delete(id);
+    });
+    for (const c of [...rewind.loaded]) if (c < c0 || c > c1) rewind.loaded.delete(c);
+}
+
+// ---------------------------------------------------------------- riproduzione e disegno
+function rwTick(ts) {
+    if (!rewind.attivo) return;
+    rewind.raf = requestAnimationFrame(rwTick);
+    const dt = rewind.lastTs ? Math.min((ts - rewind.lastTs) / 1000, 0.25) : 0;
+    rewind.lastTs = ts;
+
+    if (rewind.playing && !rewind.dragging && !rewind.editing) {
+        if (rewind.loaded.has(rwChunk(rewind.t))) {
+            rewind.t += dt * rewind.speed;
+            if (rewind.t >= rewind.max) { rewind.t = rewind.max; rwSetPlaying(false); }
+        }
+        // precarica i blocchi davanti, in proporzione alla velocità
+        rwEnsure(rewind.t, Math.min(8, Math.ceil(rewind.speed * 8 / RW_CHUNK) + 1));
+        rewind.dirty = true;
+    }
+    if (ts - rewind.lastPota > 10000) { rewind.lastPota = ts; rwPota(); }
+    if (rewind.dirty && (!rewind.playing || ts - rewind.lastDraw >= RW_FPS_MS)) {
+        rewind.lastDraw = ts;
+        rewind.dirty = false;
+        rwDisegna();
+    }
+}
+
+function rwIcona(line) {
+    const c = getLineColors(String(line || '-').toUpperCase());
+    const html = `<div class="bv-boat-icon" style="background-color: ${c.bg}; color: ${c.text}; border: 2.5px solid ${c.border}; width: 26px; height: 26px; box-sizing: border-box;">${esc(line || '-')}</div>`;
+    return L.divIcon({ html, className: '', iconSize: [26, 26], iconAnchor: [13, 13] });
+}
+
+function rwDisegna() {
+    if (!rewind.layer) return;
+    const t = rewind.t, visibili = new Set();
+    rewind.boats.forEach((b, id) => {
+        const pos = rwPosizione(b.pts, t);
+        if (!pos) return;
+        visibili.add(id);
+        let m = rewind.markers[id];
+        if (!m) {
+            m = L.marker(pos, { icon: rwIcona(b.line), zIndexOffset: 1000, keyboard: false });
+            m.on('click', () => rwApriBarca(id));
+            m.addTo(rewind.layer);
+            m.rwLine = b.line;
+            rewind.markers[id] = m;
+        } else {
+            if (m.rwLine !== b.line) { m.setIcon(rwIcona(b.line)); m.rwLine = b.line; }
+            m.setLatLng(pos);
+        }
+    });
+    for (const id of Object.keys(rewind.markers)) {
+        if (!visibili.has(id)) { rewind.layer.removeLayer(rewind.markers[id]); delete rewind.markers[id]; }
+    }
+    rewind.nVisibili = visibili.size;
+    rwAggiornaUI();
+}
+
+function rwSetPlaying(si) {
+    rewind.playing = si;
+    const btn = document.getElementById('bv-rw-play');
+    if (btn) btn.innerHTML = si ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
+    rewind.dirty = true;
+}
+
+function rwAggiornaEtichetta() {
+    const el = document.getElementById('bv-rw-speed');
+    if (!el) return;
+    let txt = `×${rewind.speed}`;
+    if (rewind.errore) txt = 'Errore di rete: riprova con Play';
+    else if (rewind.pending > 0 && !rewind.loaded.has(rwChunk(rewind.t))) txt = 'Caricamento…';
+    else txt += ` · ${rewind.nVisibili || 0} mezzi`;
+    el.textContent = txt;
+    document.getElementById('bv-rw-slower').disabled = rewind.speedIdx === 0;
+    document.getElementById('bv-rw-faster').disabled = rewind.speedIdx === RW_VELOCITA.length - 1;
+}
+
+// barra, fumetto con l'ora e etichetta
+function rwAggiornaUI() {
+    const range = document.getElementById('bv-rw-range');
+    const span = Math.max(1, rewind.max - rewind.min);
+    range.max = String(span);
+    if (!rewind.dragging) range.value = String(Math.round(rewind.t - rewind.min));
+    const pct = Math.min(1, Math.max(0, (rewind.t - rewind.min) / span));
+    range.style.setProperty('--p', (pct * 100).toFixed(2) + '%');
+
+    const wrap = document.getElementById('bv-rw-slider-wrap');
+    const bubble = document.getElementById('bv-rw-bubble');
+    const W = wrap.clientWidth, bw = bubble.offsetWidth || 100;
+    const thumbX = 11 + pct * Math.max(0, W - 22);
+    const x = Math.min(Math.max(thumbX, bw / 2), Math.max(bw / 2, W - bw / 2));
+    bubble.style.left = x + 'px';
+    bubble.style.setProperty('--arrow', (thumbX - x) + 'px');
+
+    const inp = document.getElementById('bv-rw-time');
+    if (!rewind.editing) inp.value = rwOra(rewind.t, true);
+    rwAggiornaEtichetta();
+}
+
+function rwVaiA(t) {
+    rewind.t = Math.min(Math.max(t, rewind.min), rewind.max);
+    rewind.dirty = true;
+    rwDisegna();
+    clearTimeout(rewind.dt);
+    rewind.dt = setTimeout(() => rwEnsure(rewind.t, 2), 120);   // niente raffica di richieste mentre si trascina
+}
+
+function rwConfermaOra() {
+    const inp = document.getElementById('bv-rw-time');
+    rewind.editing = false;
+    const p = rwParseOra(inp.value);
+    if (p) rwVaiA(romeToUnix(rewind.date, p.h, p.m, p.s));
+    else rwAggiornaUI();                                         // non valido: torna all'ora attuale
+}
+
+// ---------------------------------------------------------------- calendario
+function rwApriCal() {
+    const [y, m] = rewind.date.split('-').map(Number);
+    rewind.cal = { y, m: m - 1 };
+    rwDisegnaCal();
+    document.getElementById('bv-rw-cal-modal').classList.add('active');
+    lockBateoLiveMap();
+}
+function rwChiudiCal() {
+    const el = document.getElementById('bv-rw-cal-modal');
+    if (el && el.classList.contains('active')) { el.classList.remove('active'); unlockBateoLiveMap(); }
+}
+function rwDisegnaCal() {
+    const { y, m } = rewind.cal;
+    const mesi = [...rewind.giorni.keys()].map(k => k.slice(0, 7)).sort();
+    const cur = `${y}-${pad2(m + 1)}`;
+    document.getElementById('bv-rw-cal-prev').disabled = !(mesi[0] < cur);
+    document.getElementById('bv-rw-cal-next').disabled = !(mesi[mesi.length - 1] > cur);
+    const titolo = new Date(y, m, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+    document.getElementById('bv-rw-cal-title').textContent = titolo.charAt(0).toUpperCase() + titolo.slice(1);
+    const celle = rwCalGriglia(y, m, new Set(rewind.giorni.keys()), rewind.date);
+    document.getElementById('bv-rw-cal-grid').innerHTML = celle.map(c => c
+        ? `<button type="button" class="bv-rw-day${c.has ? ' has' : ''}${c.sel ? ' sel' : ''}" data-day="${c.key}"${c.has ? '' : ' disabled'}>${c.d}</button>`
+        : '<span></span>').join('');
+}
+
+// ---------------------------------------------------------------- dettaglio battello (dallo storico)
+async function rwApriBarca(id) {
+    const b = rewind.boats.get(id);
+    const date = rewind.date, t = rewind.t;
+    activeSelection = { type: 'rewind', id };
+    const intest = `<div class="bv-speed-card" style="justify-content: flex-start;"><div>Linea <strong style="font-size:16px;">${esc(b ? b.line : '-')}</strong> · ${rwOra(t, true)}</div></div>`;
+    openBateoLiveDrawer(`Linea ${b ? b.line : '-'}`, intest + '<p style="color:#666; font-size:14px;">Caricamento…</p>');
+    const ancora = () => activeSelection && activeSelection.type === 'rewind' && activeSelection.id === id && rewind.attivo;
+    try {
+        const r1 = await fetch(`${API_URL}/api/history/${date}/trips?boat=${encodeURIComponent(id)}`);
+        if (!r1.ok) throw new Error('HTTP ' + r1.status);
+        const corse = await r1.json();
+        if (!ancora()) return;
+        let corsa = corse.find(c => c.first - 600 <= t && t <= c.last + 600);
+        if (!corsa) corsa = [...corse].reverse().find(c => c.first <= t);
+        if (!corsa) { openBateoLiveDrawer(`Linea ${b ? b.line : '-'}`, intest + '<p style="color:#666; font-size:14px;">Nessuna corsa registrata per questa unità in questo momento.</p>'); return; }
+        const r2 = await fetch(`${API_URL}/api/history/${date}/trip/${encodeURIComponent(corsa.trip)}`);
+        if (!r2.ok) throw new Error('HTTP ' + r2.status);
+        const det = await r2.json();
+        if (!ancora()) return;
+
+        let html = intest + `<div class="bv-timeline-title">${esc(det.headsign || 'Corsa')} · passaggi registrati</div>`;
+        det.stops.forEach(s => {
+            const dep = s.departure, arr = s.arrival;
+            const passata = dep !== null && dep <= t;
+            const inSosta = !passata && arr <= t;
+            const cls = passata ? 'bv-stop-passed' : (inSosta ? 'bv-stop-current' : '');
+            const icona = passata ? '✔️' : (inSosta ? '⚓' : '<div class="bv-dot"></div>');
+            const orari = `<div class="bv-time-sub">Prog: <span class="bv-time-main">${rwOra(s.scheduled)}</span></div>`
+                + `<div class="bv-time-sub">Arr: <span class="bv-time-main">${rwOra(arr)}</span>${dep !== null ? ` · Part: <span class="bv-time-main">${rwOra(dep)}</span>` : ''}</div>`;
+            html += `<div class="bv-time-row ${cls}" style="cursor:default;">
+                <div class="bv-stop-info">${icona}<span class="bv-stop-name">${esc(s.stopName || s.stopId)}</span></div>
+                <div class="bv-time-block">${orari}${getDelayBadge(s.delay)}</div>
+            </div>`;
+        });
+        openBateoLiveDrawer(`Linea ${det.line || (b ? b.line : '-')}`, html);
+    } catch (e) {
+        console.error('Rewind: dettaglio battello', e);
+        if (ancora()) openBateoLiveDrawer(`Linea ${b ? b.line : '-'}`, intest + '<p style="color:#e53935; font-size:14px;">Impossibile caricare il dettaglio.</p>');
+    }
+}
+
+// ---------------------------------------------------------------- collegamento dei controlli
+function initRewindUI() {
+    const $ = (id) => document.getElementById(id);
+    $('bv-rw-datebar').addEventListener('click', rwApriCal);
+    $('bv-rw-cal-modal').addEventListener('click', (e) => { if (e.target === e.currentTarget) rwChiudiCal(); });
+    $('bv-rw-cal-prev').addEventListener('click', () => { rewind.cal.m--; if (rewind.cal.m < 0) { rewind.cal.m = 11; rewind.cal.y--; } rwDisegnaCal(); });
+    $('bv-rw-cal-next').addEventListener('click', () => { rewind.cal.m++; if (rewind.cal.m > 11) { rewind.cal.m = 0; rewind.cal.y++; } rwDisegnaCal(); });
+    $('bv-rw-cal-grid').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-day]');
+        if (!b || b.disabled) return;
+        rwChiudiCal();
+        if (b.dataset.day !== rewind.date) { closeBateoLiveDrawer(); rwImpostaGiorno(b.dataset.day); }
+    });
+
+    $('bv-rw-play').addEventListener('click', () => {
+        if (!rewind.playing && rewind.t >= rewind.max - 1) rewind.t = rewind.min;   // a fine corsa Play riparte dall'inizio
+        rewind.errore = false;
+        rwSetPlaying(!rewind.playing);
+        if (rewind.playing) rwEnsure(rewind.t, 2);
+        rwAggiornaEtichetta();
+    });
+    const cambiaVelocita = (d) => {
+        rewind.speedIdx = Math.min(RW_VELOCITA.length - 1, Math.max(0, rewind.speedIdx + d));
+        rewind.speed = RW_VELOCITA[rewind.speedIdx];
+        rwAggiornaEtichetta();
+    };
+    $('bv-rw-slower').addEventListener('click', () => cambiaVelocita(-1));
+    $('bv-rw-faster').addEventListener('click', () => cambiaVelocita(1));
+
+    const range = $('bv-rw-range');
+    range.addEventListener('pointerdown', () => { rewind.dragging = true; });
+    const finePressione = () => { if (rewind.dragging) { rewind.dragging = false; rwEnsure(rewind.t, 2); } };
+    window.addEventListener('pointerup', finePressione);
+    window.addEventListener('pointercancel', finePressione);
+    range.addEventListener('input', () => rwVaiA(rewind.min + Number(range.value)));
+
+    const inp = $('bv-rw-time');
+    inp.addEventListener('focus', () => { rewind.editing = true; rwSetPlaying(false); setTimeout(() => inp.select(), 0); });
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+    inp.addEventListener('blur', rwConfermaOra);
+}
+
+export const _test = { costruisciPercorso, proietta, orarioProgrammato, trovaProssima, trovaProssimaDaOrario, alongDaOrario, aPiano, formattaRitardo, hhmm, rwParseOra, rwPosizione, rwUnisci, romeToUnix, rwOra, rwCalGriglia };
