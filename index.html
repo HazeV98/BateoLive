@@ -210,6 +210,18 @@
         const map = L.map('map', { zoomControl: false, keyboard: false, layers: [baseOSM, nauticLayer] }).setView([45.4371, 12.3326], 13);
         map.attributionControl.setPrefix(false);
 
+        // Contenitore dedicato alla sola parte geografica della mappa.
+        // Leaflet continua a muovere normalmente .leaflet-map-pane; noi
+        // ruotiamo solo questo contenitore, lasciando fermi tutti i controlli/UI.
+        const courseUpLayer = document.createElement('div');
+        courseUpLayer.className = 'bv-course-up-layer';
+        courseUpLayer.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;transform-origin:50% 50%;will-change:transform;';
+        const mapPane = map.getPane('mapPane');
+        Array.from(mapPane.children).forEach(el => {
+            if (el.classList && el.classList.contains('leaflet-pane')) courseUpLayer.appendChild(el);
+        });
+        mapPane.appendChild(courseUpLayer);
+
         const oms = new OverlappingMarkerSpiderfier(map, {
             keepSpiderfied: true,
             legWeight: 2,
@@ -334,6 +346,27 @@
             searchBtn.innerText = "Cerca";
             searchBtn.classList.remove("error");
         }
+
+        function buildCompassTape() {
+            const tape=document.getElementById('gps-compass-tape');
+            if(!tape || tape.dataset.ready==='1') return;
+            const labels={0:'N',90:'E',180:'S',270:'W'};
+            const total=37; // 0..360, ogni 10 gradi
+            let html='';
+            for(let i=0;i<total;i++){
+                const deg=(i*10)%360;
+                const major=deg%30===0;
+                html += `<div class="gps-compass-mark">` +
+                        `<div class="gps-tick ${major?'major':''}"></div>` +
+                        (major ? `<div class="gps-compass-label major">${labels[deg] || deg+'°'}</div>` : '') +
+                        `</div>`;
+            }
+            // Tre copie permettono alla ghiera di scorrere senza rimanere vuota ai bordi.
+            tape.innerHTML=html+html+html;
+            tape.dataset.ready='1';
+        }
+
+        buildCompassTape();
 
         function openSearchModal() { 
             document.getElementById('search-modal').classList.add('active'); 
@@ -824,23 +857,15 @@
 
         function applyCourseUpRotation(heading) {
             const h=((heading%360)+360)%360;
-            // Ruota solo i livelli della mappa, non il contenitore Leaflet:
-            // così i controlli e tutta la pagina restano fermi.
-            const angle=`rotate(${-h}deg)`;
-            const panes=map.getPanes();
-            ['tilePane','overlayPane','shadowPane','markerPane','tooltipPane','popupPane'].forEach(name=>{
-                if (panes[name]) {
-                    panes[name].style.transformOrigin='50% 50%';
-                    panes[name].style.transform=angle;
-                }
-            });
+            // Ruota SOLO il contenuto geografico. Il contenitore Leaflet,
+            // i controlli, i FAB e la ghiera restano completamente fermi.
+            if (courseUpLayer) {
+                courseUpLayer.style.transform=`rotate(${-h}deg)`;
+            }
         }
 
         function resetCourseUpRotation() {
-            const panes=map.getPanes();
-            ['tilePane','overlayPane','shadowPane','markerPane','tooltipPane','popupPane'].forEach(name=>{
-                if (panes[name]) panes[name].style.transform='';
-            });
+            if (courseUpLayer) courseUpLayer.style.transform='rotate(0deg)';
         }
 
         function elaboraPosizioneGPS(position) {
