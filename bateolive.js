@@ -605,7 +605,11 @@ function aggiornaBateoLiveAuthUI() {
     const user = bateoliveAuth.currentUser;
     bateoliveAuthenticated = !!user;
     btn.classList.toggle('logged', bateoliveAuthenticated);
-    if (nav) nav.style.display = bateoliveAuthenticated ? 'flex' : 'none';
+    // il tasto navigatore compare solo a GPS acceso (e con accesso eseguito)
+    const gpsAcceso = !!document.getElementById('bv-fab-gps')?.classList.contains('active');
+    if (nav) nav.style.display = (bateoliveAuthenticated && gpsAcceso) ? 'flex' : 'none';
+    // accesso eseguito a GPS già acceso: all'accensione il navigatore non era partito, parte ora
+    if (bateoliveAuthenticated && gpsAcceso && !gpsAttivo) avviaNavigatore();
     if (!modal) return;
     if (user) {
         title.innerHTML = '<i class="fa-solid fa-circle-check"></i> Profilo';
