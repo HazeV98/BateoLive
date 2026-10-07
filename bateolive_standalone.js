@@ -199,7 +199,7 @@ export function initUIBateoLive() {
             100% { transform: none; opacity: 1; }
         }
 
-        #modal-bateolive-main { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9999; background: var(--bv-surface); color: var(--bv-text); display: none; flex-direction: column; font-family: inherit; overflow: hidden; }
+        #modal-bateolive-main { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; background: var(--bv-surface); color: var(--bv-text); display: none; flex-direction: column; font-family: inherit; overflow: hidden; }
         #modal-bateolive-main button, #modal-bateolive-main input { font-family: inherit; }
         #modal-bateolive-main button:focus-visible { outline: 2px solid var(--bv-primary); outline-offset: 2px; }
 
