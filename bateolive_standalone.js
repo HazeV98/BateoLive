@@ -324,6 +324,11 @@ export function initUIBateoLive() {
         #bv-close-btn:hover { background: var(--bv-border); }
         #bv-drawer-content { padding: 0; overflow-y: auto; flex-grow: 1; overscroll-behavior: contain; }
         .bv-drawer-section { padding: 14px 16px 18px; }
+        /* Riquadro fisso sotto l'intestazione: la lista sotto scorre da sola */
+        #bv-drawer-pinned { flex-shrink: 0; padding: 14px 16px 12px; border-bottom: 1px solid var(--bv-border); }
+        #bv-drawer-pinned:empty { display: none; }
+        #bv-drawer-pinned .bv-sum { margin-bottom: 0; }
+        #bv-drawer-pinned:not(:empty) + #bv-drawer-content .bv-drawer-section { padding-top: 10px; }
 
         .bv-sum { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; margin-bottom: 14px; border-radius: 12px; background: var(--bv-fill); border: 1px solid var(--bv-border); }
         .bv-sum-txt { flex: 1; min-width: 0; }
@@ -587,6 +592,7 @@ export function initUIBateoLive() {
                 </div>
                 <button id="bv-close-btn" type="button" onclick="closeBateoLiveDrawer()" aria-label="Chiudi"><i class="fa-solid fa-xmark"></i></button>
             </div>
+            <div id="bv-drawer-pinned"></div>
             <div id="bv-drawer-content"></div>
         </div>
 
@@ -1303,7 +1309,7 @@ function closeBateoLiveDrawer() {
     if (drawer) drawer.classList.remove('open');
 }
 
-// opts: { badge: html a sinistra del titolo, sub: riga sotto il titolo,
+// opts: { badge: html a sinistra del titolo, sub: riga sotto il titolo, pinned: html fisso sotto l'intestazione (non scorre),
 //         focusKey: quando cambia, la lista scorre alla fermata corrente/prossima (gli aggiornamenti live non toccano lo scroll) }
 function openBateoLiveDrawer(title, htmlContent, opts = {}) {
     const content = document.getElementById('bv-drawer-content');
@@ -1313,6 +1319,8 @@ function openBateoLiveDrawer(title, htmlContent, opts = {}) {
     sub.hidden = !opts.sub;
     document.getElementById('bv-drawer-badge').innerHTML = opts.badge || '';
     content.innerHTML = `<div class="bv-drawer-section">${htmlContent}</div>`;
+    const pinned = document.getElementById('bv-drawer-pinned');
+    if (pinned) pinned.innerHTML = opts.pinned || '';
     document.getElementById('bv-drawer').classList.add('open');
 
     if (!opts.focusKey) { drawerFocusKey = null; return; }
@@ -1552,7 +1560,7 @@ async function renderBoatDrawer(boat) {
             riepilogo = bvRiepilogo('Prossima fermata', prox.stopName, `<div class="bv-sum-time">${ora}</div>${getDelayBadge(prox.delay)}`);
         }
 
-        let html = riepilogo + `<div class="bv-timeline-title">Percorso corsa attuale</div><div class="bv-tl">`;
+        let html = `<div class="bv-timeline-title">Percorso corsa attuale</div><div class="bv-tl">`;
         stopTimes.forEach((st, i) => {
             const isOffSchedule = Math.abs(Math.round(st.delay / 60)) >= 1;
 
@@ -1580,7 +1588,7 @@ async function renderBoatDrawer(boat) {
             html += bvRigaFermata(st.status, i === idxProx ? ' prossima' : '', st.stopName, orari, getDelayBadge(st.delay));
         });
         html += `</div>`;
-        openBateoLiveDrawer(boat.label, html, opts);
+        openBateoLiveDrawer(boat.label, html, { ...opts, pinned: riepilogo });
     } catch (e) { console.error(e); }
 }
 
@@ -3045,8 +3053,8 @@ async function rwApriBarca(id) {
         const det = await r2.json();
         if (!ancora()) return;
 
-        let html = det.headsign ? bvRiepilogo('Destinazione', det.headsign) : '';
-        html += `<div class="bv-timeline-title">Passaggi registrati</div><div class="bv-tl">`;
+        const riepilogo = det.headsign ? bvRiepilogo('Destinazione', det.headsign) : '';
+        let html = `<div class="bv-timeline-title">Passaggi registrati</div><div class="bv-tl">`;
         let primo = true;
         det.stops.forEach(s => {
             const dep = s.departure, arr = s.arrival;
@@ -3065,7 +3073,7 @@ async function rwApriBarca(id) {
         const nomeFinale = nomeUnita || det.boatLabel || null;
         const titoloFinale = nomeFinale || `Linea ${lineaFinale}`;
         const subFinale = `${nomeFinale ? `Linea ${lineaFinale} · ` : ''}Rewind alle ${rwOra(t, true)}`;
-        openBateoLiveDrawer(titoloFinale, html, { badge: bvDotLinea(lineaFinale), sub: subFinale, focusKey: `rw-${id}-${corsa.trip}` });
+        openBateoLiveDrawer(titoloFinale, html, { badge: bvDotLinea(lineaFinale), sub: subFinale, pinned: riepilogo, focusKey: `rw-${id}-${corsa.trip}` });
     } catch (e) {
         console.error('Rewind: dettaglio battello', e);
         if (ancora()) openBateoLiveDrawer(titolo, '<p class="bv-empty err">Impossibile caricare il dettaglio.</p>', opts);
