@@ -92,7 +92,7 @@
         import {
             initUIBateoLive,
             avviaMotoreBateoLive
-        } from './bateolive.js';
+        } from './bateolive_standalone.js';
 
         const boot = document.getElementById('boot-screen');
         const errorBox = document.getElementById('boot-error');
@@ -114,7 +114,7 @@
             errorBox.style.display = 'block';
             errorBox.innerHTML = `
                 <strong>Impossibile avviare BateoLive.</strong><br>
-                Controlla che <b>bateolive.js</b> e <b>turni-core.js</b> siano nella stessa cartella di questo index.html.<br><br>
+                Controlla che <b>bateolive_standalone.js</b> e <b>turni-core.js</b> siano nella stessa cartella di questo index.html.<br><br>
                 <small>${String(error?.message || error)}</small>
             `;
             boot.querySelector('i').style.display = 'none';
