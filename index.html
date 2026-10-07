@@ -8,6 +8,10 @@
 
     <link rel="icon" type="image/png" href="assets/icon.png">
     <link rel="apple-touch-icon" href="assets/icon.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="BateoLive">
 
     <!-- Il modulo BateoLive crea autonomamente tutta la UI e carica Leaflet/OMS. -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -122,6 +126,35 @@
             `;
             boot.querySelector('i').style.display = 'none';
             boot.querySelector('span').style.display = 'none';
+        }
+    </script>
+
+    <!--
+        Service worker: tiene l'app disponibile offline e si aggiorna da solo.
+        Per pubblicare una nuova versione basta cambiare CACHE_VERSION in sw.js.
+    -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', async () => {
+                try {
+                    const avevaControllo = !!navigator.serviceWorker.controller;
+                    const reg = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+
+                    // quando arriva una nuova versione l'app si ricarica una sola volta (non alla primissima installazione)
+                    let ricaricata = false;
+                    navigator.serviceWorker.addEventListener('controllerchange', () => {
+                        if (!avevaControllo || ricaricata) return;
+                        ricaricata = true;
+                        location.reload();
+                    });
+
+                    // controlla gli aggiornamenti all'apertura e ogni volta che l'app torna in primo piano
+                    reg.update();
+                    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update(); });
+                } catch (e) {
+                    console.warn('Service worker non attivo:', e);
+                }
+            });
         }
     </script>
 </body>

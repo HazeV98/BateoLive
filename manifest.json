@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "BateoLive",
+  "short_name": "BateoLive",
+  "description": "Mappa in tempo reale dei mezzi ACTV a Venezia, con navigatore di turno e rewind.",
+  "lang": "it",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "assets/icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
