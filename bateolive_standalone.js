@@ -1,7 +1,8 @@
 // ==========================================
-// BATEOLIVE - JS MODULE (Versione Completa)
+// BATEOLIVE STANDALONE - JS MODULE (Versione Completa)
 // Include il navigatore di turno (ex gps.js): ritardo/anticipo, attività in corso, prossima fermata,
 // tendina fermate e rotta della linea sulla mappa.
+// Grafica: tema chiaro/scuro (segue il sistema, o il tasto sole/luna), tasto + per i pulsanti, pannelli unità/fermate.
 // ==========================================
 
 import { getApps, getApp, initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
@@ -155,218 +156,348 @@ export function initUIBateoLive() {
 
     const uiHTML = `
     <style>
-        #modal-bateolive-main { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9999; background: #e0e0e0; display: none; flex-direction: column; font-family: 'Inter', sans-serif; overflow: hidden; }
-        
-        #bv-map-wrapper { flex-grow: 1; position: relative; overflow: hidden; background: #aad3df; z-index: 1; }
-        #bv-map { width: 200%; height: 200%; position: absolute; top: -50%; left: -50%; z-index: 1; transition: transform 0.2s linear; }
+        /* ---------- Tema: usa le stesse variabili dell'app (come dashboard), chiaro/scuro automatico ---------- */
+        #modal-bateolive-main {
+            --bv-surface: #ffffff;
+            --bv-glass: var(--bv-surface);
+            --bv-text: #1e293b;
+            --bv-muted: #64748b;
+            --bv-border: #e2e8f0;
+            --bv-primary: #00529b;
+            --bv-danger: #dc3545;
+            --bv-ok: #28a745;
+            --bv-ok-t: #15803d;
+            --bv-bad-t: #b42318;
+            --bv-warn-t: #b45309;
+            --bv-fill: rgba(128, 128, 128, 0.08);
+            --bv-fill-2: rgba(128, 128, 128, 0.16);
+            --bv-tint: rgba(0, 82, 155, 0.1);
+            --bv-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+            --bv-radius: 14px;
+            --bv-sea: #aad3df;
+        }
+        @supports (color: color-mix(in srgb, red, blue)) {
+            #modal-bateolive-main {
+                --bv-glass: color-mix(in srgb, var(--bv-surface) 92%, transparent);
+                --bv-tint: color-mix(in srgb, var(--bv-primary) 12%, transparent);
+            }
+        }
+        #modal-bateolive-main.bv-dark {
+            color-scheme: dark;
+            --bv-ok-t: #4ade80;
+            --bv-bad-t: #ff7b72;
+            --bv-warn-t: #fbbf24;
+            --bv-shadow: 0 4px 18px rgba(0, 0, 0, 0.55);
+            --bv-sea: #1b2733;
+        }
 
-        .bv-boat-icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; box-shadow: 0 4px 10px rgba(0,0,0,0.4); cursor: pointer; transform: rotate(var(--marker-rotation, 0deg)); transition: transform 0.2s linear, scale 0.2s ease; }
+        /* Tema scuro: segue il sistema oppure il tasto sole/luna (solo per la sessione) */
+        #modal-bateolive-main.bv-dark { color-scheme: dark; --bv-surface: #1c2430; --bv-text: #e8edf3; --bv-muted: #9aa7b8; --bv-border: #334155; --bv-primary: #3b82f6; --bv-danger: #ef4444; --bv-ok: #22c55e; }
+        .bv-fab-tema i.swap { animation: bv-tema-swap 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+        @keyframes bv-tema-swap {
+            0% { transform: rotate(-90deg) scale(0.3); opacity: 0; }
+            100% { transform: none; opacity: 1; }
+        }
+
+        #modal-bateolive-main { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9999; background: var(--bv-surface); color: var(--bv-text); display: none; flex-direction: column; font-family: inherit; overflow: hidden; }
+        #modal-bateolive-main button, #modal-bateolive-main input { font-family: inherit; }
+        #modal-bateolive-main button:focus-visible { outline: 2px solid var(--bv-primary); outline-offset: 2px; }
+
+        #bv-map-wrapper { flex-grow: 1; position: relative; overflow: hidden; background: var(--bv-sea); z-index: 1; }
+        #bv-map { width: 200%; height: 200%; position: absolute; top: -50%; left: -50%; z-index: 1; transition: transform 0.2s linear; background: var(--bv-sea); font-family: inherit; }
+
+        /* Mappa base in tema scuro: tile OSM invertite (il satellitare resta com'è) */
+        .bv-tiles-osm { transition: filter 0.4s ease; }
+        #modal-bateolive-main.bv-dark .bv-tiles-osm { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.75); }
+
+        /* Popup Leaflet (altri utenti) */
+        #modal-bateolive-main .leaflet-popup-content-wrapper, #modal-bateolive-main .leaflet-popup-tip { background: var(--bv-surface); color: var(--bv-text); box-shadow: var(--bv-shadow); }
+        #modal-bateolive-main .leaflet-popup-content { margin: 10px 14px; font-size: 13px; line-height: 1.4; }
+        #modal-bateolive-main .leaflet-container a.leaflet-popup-close-button { color: var(--bv-muted); }
+
+        /* Marker */
+        .bv-boat-icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; box-shadow: 0 2px 8px rgba(0,0,0,0.45); cursor: pointer; transform: rotate(var(--marker-rotation, 0deg)); transition: transform 0.2s linear, scale 0.2s ease; }
         .bv-boat-icon:hover { scale: 1.15; }
-        
+
         .bv-stop-icon-wrap { width: 14px; height: 14px; }
-        .bv-stop-icon-inner { background: #ffffff; border: 2.5px solid #00529b; border-radius: 50%; width: 14px; height: 14px; box-sizing: border-box; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: pointer; transition: scale 0.2s ease; }
+        .bv-stop-icon-inner { background: var(--bv-surface); border: 2.5px solid var(--bv-primary); border-radius: 50%; width: 14px; height: 14px; box-sizing: border-box; box-shadow: 0 1px 5px rgba(0,0,0,0.4); cursor: pointer; transition: scale 0.2s ease; }
         .bv-stop-icon-inner:hover { scale: 1.4; }
-        
-        .bv-line-dot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; border: 2px solid; flex-shrink: 0; box-sizing: border-box; }
 
-        /* Tasto fluttuante in alto a sinistra (Indietro) */
-        .bv-back-btn { position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); left: 20px; z-index: 1000; width: 45px; height: 45px; border-radius: 50%; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; color: #00529b; }
+        /* Badge linea (stessi colori ACTV ovunque) */
+        .bv-line-dot { min-width: 24px; height: 24px; padding: 0 4px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; border: 2px solid; flex-shrink: 0; box-sizing: border-box; line-height: 1; }
 
-        /* Contenitore Fabs in basso a sinistra */
-        .bv-fab-container { position: absolute; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); left: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 15px; }
-
-        .bv-error-banner { position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%) translateY(-20px); z-index: 1500; background: #e53935; color: white; padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 15px rgba(0,0,0,0.25); display: flex; align-items: center; gap: 8px; opacity: 0; pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease; max-width: 85%; text-align: center; }
-        .bv-error-banner.active { opacity: 1; transform: translateX(-50%) translateY(0); }
-        .bv-fab { width: 45px; height: 45px; border-radius: 50%; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; transition: transform 0.2s, background 0.2s; color: #00529b; }
-        .bv-fab.active { background: #00529b; color: white; }
+        /* ---------- Tasti fluttuanti ---------- */
+        .bv-profile-btn, .bv-fab { width: 45px; height: 45px; border-radius: 50%; background: var(--bv-glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--bv-border); box-shadow: var(--bv-shadow); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--bv-primary); transition: transform 0.2s, background 0.2s, color 0.2s; }
+        .bv-profile-btn { position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); left: 20px; z-index: 3000; padding: 0; font-size: 18px; }
+        .bv-profile-btn.logged { color: var(--bv-ok-t); }
+        .bv-fab { font-size: 18px; }
+        .bv-fab.active { background: var(--bv-primary); border-color: var(--bv-primary); color: #fff; }
         .bv-fab:hover { transform: scale(1.05); }
+        .bv-fab-container { position: absolute; bottom: calc(90px + env(safe-area-inset-bottom, 0px)); left: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 15px; pointer-events: none; }
+        /* Colonna tasti richiudibile: a cascata dal basso quando si apre, dall'alto quando si chiude */
+        .bv-fab-container .bv-fab { pointer-events: auto; opacity: 1; transform: none; transition: transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.15), opacity 0.22s ease, background 0.2s, color 0.2s; }
+        .bv-fab-container.chiuso .bv-fab { opacity: 0; transform: translateY(26px) scale(0.5); pointer-events: none; transition: transform 0.22s ease-in, opacity 0.18s ease, background 0.2s, color 0.2s; }
+        .bv-fab-container:not(.chiuso) .bv-fab:hover { transform: scale(1.05); }
+        .bv-fab-menu { position: absolute; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); left: 20px; z-index: 1000; font-size: 18px; }
+        .bv-fab-menu i { transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+        .bv-fab-menu.active i { transform: rotate(135deg); }
 
-        /* HUD Bussola Superiore */
-        .bv-hud-compass { position: absolute; top: calc(15px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); width: 250px; height: 60px; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px); border-radius: 12px; border: 1px solid rgba(255,255,255,0.5); box-shadow: 0 4px 15px rgba(0,0,0,0.2); overflow: hidden; z-index: 1000; display: flex; align-items: center; justify-content: center; display: none; }
+        .bv-error-banner { position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%) translateY(-20px); z-index: 1500; background: var(--bv-danger); color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 13px; font-weight: 600; box-shadow: var(--bv-shadow); display: flex; align-items: center; gap: 8px; opacity: 0; pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease; max-width: 85%; text-align: center; }
+        .bv-error-banner.active { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        /* ---------- HUD bussola ---------- */
+        .bv-hud-compass { position: absolute; top: calc(15px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); width: 250px; height: 60px; background: var(--bv-glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 12px; border: 1px solid var(--bv-border); box-shadow: var(--bv-shadow); overflow: hidden; z-index: 1000; align-items: center; justify-content: center; display: none; }
         .bv-compass-tape { position: absolute; top: 10px; left: 0; height: 100%; display: flex; transition: transform 0.15s linear; }
         .bv-compass-mark { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; width: 60px; flex-shrink: 0; }
-        .bv-tick { width: 2px; height: 8px; background: #666; margin-bottom: 4px; border-radius: 2px; }
-        .bv-tick.major { height: 16px; background: #00529b; width: 3px; }
-        .bv-compass-label { color: #666; font-size: 12px; font-weight: 600; }
-        .bv-compass-label.major { color: #333; font-size: 14px; font-weight: 900; }
-        .bv-compass-center-line { position: absolute; left: 50%; top: 0; width: 3px; height: 30px; background: #e3001b; transform: translateX(-50%); z-index: 10; border-radius: 2px; }
+        .bv-tick { width: 2px; height: 8px; background: var(--bv-muted); opacity: 0.7; margin-bottom: 4px; border-radius: 2px; }
+        .bv-tick.major { height: 16px; background: var(--bv-primary); opacity: 1; width: 3px; }
+        .bv-compass-label { color: var(--bv-muted); font-size: 12px; font-weight: 600; }
+        .bv-compass-label.major { color: var(--bv-text); font-size: 14px; font-weight: 900; }
+        .bv-compass-center-line { position: absolute; left: 50%; top: 0; width: 3px; height: 30px; background: var(--bv-danger); transform: translateX(-50%); z-index: 10; border-radius: 2px; }
 
-        /* HUD Velocità Inferiore Destra */
-        .bv-hud-speed { position: absolute; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); right: 20px; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px); padding: 12px 18px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.5); box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 1000; display: none; }
+        /* ---------- HUD velocità + navigatore (compatto, stessa struttura di prima) ---------- */
+        .bv-hud-speed { position: absolute; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); right: 20px; background: var(--bv-glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 12px 18px; border-radius: 16px; border: 1px solid var(--bv-border); box-shadow: var(--bv-shadow); z-index: 1000; display: none; }
         .bv-speed-wrapper { display: flex; align-items: baseline; justify-content: center; gap: 5px; }
-        .bv-speed-val { font-size: 42px; font-weight: 900; color: #00529b; line-height: 0.9; }
-        .bv-speed-unit { font-size: 16px; font-weight: bold; color: #666; }
+        .bv-speed-val { font-size: 42px; font-weight: 900; color: var(--bv-primary); line-height: 0.9; font-variant-numeric: tabular-nums; }
+        .bv-speed-unit { font-size: 16px; font-weight: bold; color: var(--bv-muted); }
 
-        /* Navigatore di turno: dentro il riquadro velocità, impilato verso l'alto */
         .bv-hud-speed [hidden] { display: none !important; }
         .bv-hud-speed.nav-on { width: min(290px, calc(100vw - 110px)); box-sizing: border-box; padding: 8px 12px 10px; }
         .bv-hud-speed.nav-on .bv-speed-wrapper { justify-content: flex-start; }
         .bv-hud-speed.nav-on .bv-speed-val { font-size: 36px; }
         .bv-nav-extra { display: none; flex-direction: column; gap: 6px; margin-bottom: 6px; }
         .bv-hud-speed.nav-on .bv-nav-extra { display: flex; }
-        .bv-nav-delay { display: none; margin-left: auto; font-size: 30px; font-weight: 900; line-height: 0.9; font-variant-numeric: tabular-nums; padding-left: 10px; border-left: 1px solid rgba(0,0,0,0.12); }
+        .bv-nav-delay { display: none; margin-left: auto; font-size: 30px; font-weight: 900; line-height: 0.9; font-variant-numeric: tabular-nums; padding-left: 10px; border-left: 1px solid var(--bv-border); }
         .bv-hud-speed.nav-on .bv-nav-delay { display: inline-block; }
-        .bv-nav-delay.tardi { color: #e53935; }
-        .bv-nav-delay.presto { color: #f39c12; }
-        .bv-nav-delay.puntuale { color: #43a047; }
-        .bv-nav-delay.spento { color: #999; opacity: 0.6; }
-        .bv-nav-lista { display: none; position: relative; max-height: 34vh; overflow-y: auto; border-bottom: 1px solid rgba(0,0,0,0.08); padding-bottom: 4px; }
+        .bv-nav-delay.tardi { color: var(--bv-bad-t); }
+        .bv-nav-delay.presto { color: var(--bv-warn-t); }
+        .bv-nav-delay.puntuale { color: var(--bv-ok-t); }
+        .bv-nav-delay.spento { color: var(--bv-muted); opacity: 0.7; }
+        .bv-nav-lista { display: none; position: relative; max-height: 34vh; overflow-y: auto; border-bottom: 1px solid var(--bv-border); padding-bottom: 4px; }
         .bv-nav-lista.aperta { display: block; }
-        .bv-nav-toggle { width: 100%; border: none; background: transparent; color: #00529b; font-size: 15px; line-height: 1; padding: 2px 0; cursor: pointer; }
+        .bv-nav-toggle { width: 100%; border: none; background: transparent; color: var(--bv-primary); font-size: 15px; line-height: 1; padding: 2px 0; cursor: pointer; }
         .bv-nav-toggle i { transition: transform 0.25s; }
         .bv-nav-toggle.aperto i { transform: rotate(180deg); }
         .bv-nav-next { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
         .bv-nav-next-txt { flex: 1; min-width: 0; }
-        .bv-nav-next-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: #666; }
-        .bv-nav-next-nome { font-size: 15px; font-weight: 800; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .bv-nav-next-ora { flex: none; font-size: 20px; font-weight: 900; color: #00529b; font-variant-numeric: tabular-nums; }
-        .bv-nav-act-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
-        .bv-nav-turno { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 36px; height: 26px; padding: 0 4px; box-sizing: border-box; border-radius: 6px; background: #1c355e; color: #fff; font-size: 12px; font-weight: 800; line-height: 1; }
-        .bv-nav-turno small { font-size: 7px; font-weight: 700; letter-spacing: 0.5px; opacity: 0.8; }
+        .bv-nav-next-label { font-size: 11px; font-weight: 600; color: var(--bv-muted); }
+        .bv-nav-next-nome { font-size: 15px; font-weight: 800; color: var(--bv-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bv-nav-next-ora { flex: none; font-size: 20px; font-weight: 900; color: var(--bv-primary); font-variant-numeric: tabular-nums; }
+        .bv-nav-act-row { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+        .bv-nav-turno { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 36px; height: 26px; padding: 0 4px; box-sizing: border-box; border-radius: 6px; background: var(--bv-primary); color: #fff; font-size: 12px; font-weight: 800; line-height: 1; }
+        .bv-nav-turno small { font-size: 8px; font-weight: 700; letter-spacing: 0.3px; opacity: 0.85; }
         .bv-nav-linea { flex: none; min-width: 26px; height: 26px; padding: 0 4px; box-sizing: border-box; border-radius: 13px; border: 2px solid; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; }
-        .bv-nav-act-row { align-items: flex-start; }
         .bv-nav-id { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; }
         .bv-nav-blocco { flex: 1; min-width: 0; }
-        .bv-nav-ora { font-size: 16px; font-weight: 800; color: #111; line-height: 1.1; font-variant-numeric: tabular-nums; }
-        .bv-nav-luogo { font-size: 11px; font-weight: 600; color: #555; line-height: 1.15; margin-top: 1px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-        .bv-nav-freccia { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 3px; color: #999; font-size: 13px; }
+        .bv-nav-ora { font-size: 16px; font-weight: 800; color: var(--bv-text); line-height: 1.1; font-variant-numeric: tabular-nums; }
+        .bv-nav-luogo { font-size: 11px; font-weight: 600; color: var(--bv-muted); line-height: 1.15; margin-top: 1px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+        .bv-nav-freccia { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 3px; color: var(--bv-muted); font-size: 13px; }
         .bv-nav-reb { font-size: 8px; font-weight: 800; color: #8b5cf6; }
-        .bv-nav-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: #666; margin-bottom: 3px; }
-        .bv-nav-dest { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .bv-nav-msg { white-space: normal; font-size: 12px; font-weight: 600; color: #555; }
-        .bv-nav-pre { flex: none; font-size: 12px; font-weight: 800; color: #00529b; }
-        .bv-nav-pill { flex: none; font-size: 10px; font-weight: 800; padding: 3px 6px; border-radius: 6px; background: rgba(100,116,139,0.15); color: #555; }
-        .bv-nav-warn { color: #d97706; }
-        .bv-nav-fermata { display: flex; align-items: center; gap: 8px; padding: 5px 4px; margin: 0 -4px; font-size: 13px; color: #222; }
+        .bv-nav-tag { font-size: 11px; font-weight: 600; color: var(--bv-muted); margin-bottom: 3px; }
+        .bv-nav-dest { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--bv-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bv-nav-msg { white-space: normal; font-size: 12px; font-weight: 600; color: var(--bv-muted); }
+        .bv-nav-pre { flex: none; font-size: 12px; font-weight: 800; color: var(--bv-primary); }
+        .bv-nav-pill { flex: none; font-size: 10px; font-weight: 800; padding: 3px 6px; border-radius: 6px; background: var(--bv-fill-2); color: var(--bv-muted); }
+        .bv-nav-warn { color: var(--bv-warn-t); }
+        .bv-nav-fermata { display: flex; align-items: center; gap: 8px; padding: 5px 4px; margin: 0 -4px; font-size: 13px; color: var(--bv-text); }
         .bv-nav-fermata.passata { opacity: 0.45; }
-        .bv-nav-fermata.prossima { font-weight: 800; background: rgba(0,82,155,0.08); border-radius: 6px; }
-        .bv-nav-punto { flex: none; width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%; border: 2px solid #00529b; background: #fff; }
+        .bv-nav-fermata.prossima { font-weight: 800; background: var(--bv-tint); border-radius: 6px; }
+        .bv-nav-punto { flex: none; width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--bv-primary); background: var(--bv-surface); }
         .bv-nav-fnome { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .bv-nav-fora { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
-        .bv-nav-fora.fine { color: #00529b; }
+        .bv-nav-fora.fine { color: var(--bv-primary); }
 
         .bv-hud-status { position: absolute; top: calc(85px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 1500; background: rgba(0,0,0,0.6); color: white; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: bold; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
 
-        #bv-drawer { position: absolute; top: calc(15px + env(safe-area-inset-top, 0px)); bottom: calc(15px + env(safe-area-inset-bottom, 0px)); right: -390px; width: 360px; max-height: calc(100% - 30px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); height: auto; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 16px; box-shadow: -4px 10px 30px rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.8); z-index: 1000; transition: right 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); display: flex; flex-direction: column; overflow: hidden; }
-        #bv-drawer.open { right: 15px; }
-        #bv-drawer-header { padding: 20px; background: linear-gradient(135deg, #00529b 0%, #003666 100%); color: white; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-        #bv-drawer-title { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.5px; }
-        #bv-close-btn { background: rgba(255,255,255,0.2); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; font-size: 14px; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; justify-content: center; }
-        #bv-close-btn:hover { background: rgba(255,255,255,0.4); }
-        #bv-drawer-content { padding: 0; overflow-y: auto; flex-grow: 1; }
+        /* ---------- Pannello dettagli (unità e fermate) ---------- */
+        #bv-drawer { position: absolute; top: calc(15px + env(safe-area-inset-top, 0px)); right: 15px; width: 360px; max-height: calc(100% - 30px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); background: var(--bv-surface); border: 1px solid var(--bv-border); border-radius: 18px; box-shadow: 0 10px 34px rgba(0,0,0,0.3); z-index: 1000; display: flex; flex-direction: column; overflow: hidden; opacity: 0; visibility: hidden; transform: translateX(24px); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.25s ease, visibility 0s linear 0.3s; }
+        #bv-drawer.open { opacity: 1; visibility: visible; transform: none; transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.25s ease, visibility 0s; }
+        #bv-drawer-header { display: flex; align-items: center; gap: 12px; padding: 14px 14px 12px 16px; border-bottom: 1px solid var(--bv-border); flex-shrink: 0; }
+        #bv-drawer-badge { flex: none; display: flex; align-items: center; justify-content: center; }
+        #bv-drawer-badge:empty { display: none; }
+        #bv-drawer-badge .bv-line-dot { min-width: 38px; height: 38px; border-radius: 19px; font-size: 14px; }
+        .bv-dh-ico { width: 38px; height: 38px; border-radius: 12px; background: var(--bv-tint); color: var(--bv-primary); display: flex; align-items: center; justify-content: center; font-size: 17px; }
+        .bv-dh-text { flex: 1; min-width: 0; }
+        #bv-drawer-title { margin: 0; font-size: 17px; font-weight: 800; line-height: 1.2; color: var(--bv-text); overflow-wrap: anywhere; }
+        #bv-drawer-sub { margin-top: 2px; font-size: 12px; font-weight: 500; color: var(--bv-muted); }
+        #bv-close-btn { flex: none; width: 34px; height: 34px; border: none; border-radius: 50%; background: var(--bv-fill-2); color: var(--bv-text); font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+        #bv-close-btn:hover { background: var(--bv-border); }
+        #bv-drawer-content { padding: 0; overflow-y: auto; flex-grow: 1; overscroll-behavior: contain; }
+        .bv-drawer-section { padding: 14px 16px 18px; }
 
-        .bv-drawer-section { padding: 20px; }
-        .bv-speed-card { background: linear-gradient(to right, #f8f9fa, #ffffff); padding: 15px; border-radius: 10px; font-size: 14px; margin-bottom: 20px; border-left: 4px solid #00529b; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; }
-        .bv-timeline-title { font-size: 13px; text-transform: uppercase; color: #666; font-weight: 600; margin-bottom: 15px; letter-spacing: 0.5px; }
+        .bv-sum { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; margin-bottom: 14px; border-radius: 12px; background: var(--bv-fill); border: 1px solid var(--bv-border); }
+        .bv-sum-txt { flex: 1; min-width: 0; }
+        .bv-sum-lbl { font-size: 12px; font-weight: 600; color: var(--bv-muted); }
+        .bv-sum-val { margin-top: 2px; font-size: 15px; font-weight: 800; color: var(--bv-text); overflow-wrap: anywhere; }
+        .bv-sum-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+        .bv-sum-time { font-size: 22px; font-weight: 900; line-height: 1; color: var(--bv-primary); font-variant-numeric: tabular-nums; }
+        .bv-timeline-title { font-size: 13px; font-weight: 700; color: var(--bv-muted); margin: 0 0 6px; }
 
-        .bv-time-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; cursor: pointer; transition: background-color 0.2s ease; }
-        .bv-time-row:hover { background-color: rgba(0,0,0,0.02); }
-        .bv-time-row:last-child { border-bottom: none; }
-        .bv-stop-info { display: flex; align-items: center; gap: 10px; flex: 1; padding-right: 15px; overflow: hidden; }
-        .bv-dot { width: 8px; height: 8px; background: #00529b; border-radius: 50%; }
-        .bv-stop-name { font-weight: 500; color: #333; }
+        .bv-empty { margin: 0; padding: 22px 8px; text-align: center; font-size: 14px; color: var(--bv-muted); }
+        .bv-empty.err { color: var(--bv-bad-t); }
 
-        .bv-stop-passed { opacity: 0.5; }
-        .bv-stop-passed .bv-dot { background: #999; }
-        .bv-stop-current { background: #f0f8ff; border-radius: 8px; padding: 12px 10px; margin: -12px -10px; }
+        /* Percorso corsa: linea verticale con nodi, come nella finestra corse della dashboard */
+        .bv-tl { position: relative; }
+        .bv-st { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; }
+        .bv-st::before { content: ''; position: absolute; left: 6px; top: 0; bottom: 0; width: 2px; background: var(--bv-border); }
+        .bv-st:first-child::before { top: 18px; }
+        .bv-st:last-child::before { bottom: calc(100% - 18px); }
+        .bv-st-node { position: relative; z-index: 1; flex: none; width: 14px; height: 14px; margin-top: 2px; box-sizing: border-box; border-radius: 50%; background: var(--bv-surface); border: 2.5px solid var(--bv-primary); }
+        .bv-st-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--bv-text); overflow-wrap: anywhere; }
+        .bv-st-time { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; font-variant-numeric: tabular-nums; }
+        .bv-st-line { font-size: 12px; color: var(--bv-muted); white-space: nowrap; }
+        .bv-st-lbl { margin-right: 5px; font-size: 11px; }
+        .bv-st-main { font-size: 13px; font-weight: 800; color: var(--bv-text); }
+        .bv-st-big { font-size: 15px; }
+        .bv-st-here { color: var(--bv-primary); }
+        .bv-st-strike { margin-right: 5px; font-size: 12px; font-weight: 400; color: var(--bv-muted); text-decoration: line-through; }
+        .bv-st.passata { opacity: 0.55; }
+        .bv-st.passata .bv-st-node { background: var(--bv-muted); border-color: var(--bv-muted); }
+        .bv-st.passata .bv-st-name { font-weight: 500; color: var(--bv-muted); }
+        .bv-st.corrente { margin: 0 -8px; padding: 10px 8px; border-radius: 10px; background: var(--bv-tint); }
+        .bv-st.corrente::before { left: 14px; }
+        .bv-st.corrente .bv-st-node { background: #ff4757; border-color: var(--bv-surface); box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.45); animation: bv-pulse 1.5s infinite; }
+        .bv-st.corrente .bv-st-name { font-weight: 800; }
+        @keyframes bv-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.45); }
+            70% { box-shadow: 0 0 0 8px rgba(255, 71, 87, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0); }
+        }
 
-        .bv-time-block { text-align: right; min-width: 90px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-        .bv-time-sub { font-size: 12px; color: #555; margin-bottom: 2px; }
-        .bv-time-main { font-weight: 700; font-size: 14px; color: #111; }
-        .bv-time-strike { text-decoration: line-through; color: #9e9e9e; font-size: 12px; margin-right: 4px; font-weight: 400; }
+        /* Badge ritardo/anticipo: sfondo trasparente + testo colorato, leggibile in entrambi i temi */
+        .bv-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; line-height: 1.4; background: var(--bv-fill-2); white-space: nowrap; }
+        .bv-pill-ok { color: var(--bv-ok-t); }
+        .bv-pill-bad { color: var(--bv-bad-t); }
+        .bv-pill-warn { color: var(--bv-warn-t); }
+        @supports (color: color-mix(in srgb, red, blue)) {
+            .bv-pill { background: color-mix(in srgb, currentColor 15%, transparent); }
+        }
 
-        .bv-badge { padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; color: white; display: inline-block; text-align: center; margin-top: 4px; }
-        .bv-badge-delay { background: #e53935; }
-        .bv-badge-early { background: #f39c12; }
-        .bv-badge-ok { background: #43a047; }
+        /* Partenze da una fermata */
+        .bv-dep { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--bv-border); border-radius: 12px; cursor: pointer; transition: background 0.2s; }
+        .bv-dep:active { background: var(--bv-fill); }
+        .bv-dep.passata { opacity: 0.55; }
+        .bv-dep.corrente { border-left: 4px solid var(--bv-primary); background: var(--bv-tint); }
+        .bv-dep-txt { flex: 1; min-width: 0; }
+        .bv-dep-dest { font-size: 14px; font-weight: 700; color: var(--bv-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bv-dep-sub { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; font-weight: 600; color: var(--bv-muted); }
+        .bv-dep-sub:empty { display: none; }
+        .bv-dep-sub .here { color: var(--bv-primary); }
+        .bv-dep-msg { margin-left: auto; font-size: 11px; font-weight: 600; }
+        .bv-dep-time { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-variant-numeric: tabular-nums; }
+        .bv-dep-time .bv-st-main { font-size: 16px; }
 
-        .bv-modal-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(3px); opacity: 0; transition: opacity 0.2s ease; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); box-sizing: border-box; }
+        /* ---------- Finestre (ricerca, filtri, unità) ---------- */
+        .bv-modal-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); opacity: 0; transition: opacity 0.2s ease; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); box-sizing: border-box; }
         .bv-modal-overlay.active { display: flex; opacity: 1; }
 
-        .bv-modal { background: white; padding: 20px; border-radius: 16px; width: 90%; max-width: 320px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.3); position: relative; }
-        .bv-modal h3 { margin-top: 0; margin-bottom: 15px; color: #00529b; font-weight: 600; flex-shrink: 0; }
+        .bv-modal { background: var(--bv-surface); color: var(--bv-text); padding: 20px; border-radius: 18px; border: 1px solid var(--bv-border); width: 90%; max-width: 320px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 10px 34px rgba(0,0,0,0.35); position: relative; }
+        .bv-modal h3 { margin: 0 0 15px; color: var(--bv-text); font-size: 17px; font-weight: 800; flex-shrink: 0; }
+        .bv-label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 600; color: var(--bv-muted); }
 
         .bv-search-container { position: relative; flex-shrink: 0; }
-        .bv-modal input[type="text"] { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; box-sizing: border-box; font-family: 'Inter', sans-serif; outline: none; font-size: 14px; }
-        .bv-modal input[type="text"]:focus { border-color: #00529b; }
-        .bv-modal-btn { background: #00529b; color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; cursor: pointer; font-weight: 600; font-family: 'Inter', sans-serif; transition: background 0.2s; flex-shrink: 0; margin-top: 15px; }
-        .bv-modal-btn:hover { background: #003666; }
-        .bv-modal-btn.error { background: #e53935; }
+        .bv-modal input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--bv-border); background: var(--bv-fill); color: var(--bv-text); margin-bottom: 15px; box-sizing: border-box; outline: none; font-size: 14px; }
+        .bv-modal input[type="text"]::placeholder { color: var(--bv-muted); opacity: 0.8; }
+        .bv-modal input[type="text"]:focus { border-color: var(--bv-primary); box-shadow: 0 0 0 3px var(--bv-tint); }
+        .bv-modal-btn { background: var(--bv-primary); color: #fff; border: none; padding: 12px; width: 100%; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 14px; transition: filter 0.2s; flex-shrink: 0; margin-top: 15px; }
+        .bv-modal-btn:hover { filter: brightness(0.92); }
+        .bv-modal-btn.error { background: var(--bv-danger); }
 
-        .bv-suggestions-dropdown { position: absolute; top: 48px; left: 0; right: 0; background: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); max-height: 220px; overflow-y: auto; z-index: 10; display: none; border: 1px solid #ddd; }
+        .bv-suggestions-dropdown { position: absolute; top: 48px; left: 0; right: 0; background: var(--bv-surface); border-radius: 12px; box-shadow: var(--bv-shadow); max-height: 220px; overflow-y: auto; z-index: 10; display: none; border: 1px solid var(--bv-border); }
         .bv-suggestions-dropdown.active { display: block; }
-        .bv-suggestion-item { padding: 12px 15px; border-bottom: 1px solid #eee; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; }
+        .bv-suggestion-item { padding: 12px 15px; border-bottom: 1px solid var(--bv-border); cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: var(--bv-text); }
         .bv-suggestion-item:last-child { border-bottom: none; }
-        .bv-suggestion-item:hover { background: #f0f8ff; color: #00529b; }
+        .bv-suggestion-item:hover { background: var(--bv-tint); color: var(--bv-primary); }
+        .bv-sugg-ico { width: 18px; text-align: center; color: var(--bv-primary); font-size: 14px; }
+        .bv-suggestion-item.vuoto { justify-content: center; color: var(--bv-muted); cursor: default; }
+        .bv-suggestion-item.vuoto:hover { background: transparent; color: var(--bv-muted); }
 
         .bv-filter-list { display: flex; flex-direction: column; overflow-y: auto; padding-right: 5px; flex-grow: 1; }
-        .bv-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+        .bv-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--bv-border); }
         .bv-toggle-row:last-child { border-bottom: none; }
-        .bv-toggle-info { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 14px; color: #333; }
+        .bv-toggle-info { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 14px; color: var(--bv-text); }
 
         .bv-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
         .bv-switch input { opacity: 0; width: 0; height: 0; }
-        .bv-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .3s; border-radius: 34px; }
-        .bv-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-        .bv-switch input:checked + .bv-slider { background-color: #43a047; }
+        .bv-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(128, 128, 128, 0.4); transition: .3s; border-radius: 34px; }
+        .bv-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.25); }
+        .bv-switch input:checked + .bv-slider { background-color: var(--bv-ok); }
         .bv-switch input:checked + .bv-slider:before { transform: translateX(20px); }
+        .bv-switch input:focus-visible + .bv-slider { outline: 2px solid var(--bv-primary); outline-offset: 2px; }
 
         #modal-bateolive-main ::-webkit-scrollbar { width: 6px; }
         #modal-bateolive-main ::-webkit-scrollbar-track { background: transparent; }
-        #modal-bateolive-main ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 10px; }
-        .bv-profile-btn { position: absolute; top: 16px; left: 16px; z-index: 3000; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255,255,255,.95); color: #00529b; box-shadow: 0 3px 12px rgba(0,0,0,.25); cursor: pointer; font-size: 18px; }
-        .bv-profile-btn.logged { color: #28a745; }
+        #modal-bateolive-main ::-webkit-scrollbar-thumb { background: rgba(128, 128, 128, 0.4); border-radius: 10px; }
+
+        /* ---------- Accesso / profilo ---------- */
         .bv-auth-modal .bv-modal { max-width: 360px; }
-        .bv-auth-title { display:flex; align-items:center; gap:8px; }
-        .bv-auth-input { width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid #ddd; border-radius:8px; margin-bottom:10px; font-size:14px; }
-        .bv-auth-error { display:none; color:#c62828; background:#ffebee; border-radius:8px; padding:9px; font-size:12px; margin-bottom:10px; }
-        .bv-auth-link { border:0; background:none; color:#00529b; cursor:pointer; padding:8px 0; font-size:12px; text-decoration:underline; }
-        .bv-auth-user { font-size:12px; color:#666; margin-bottom:10px; }
+        .bv-auth-title { display: flex; align-items: center; gap: 8px; }
+        .bv-auth-input { width: 100%; box-sizing: border-box; padding: 12px; margin-bottom: 10px; border: 1px solid var(--bv-border); border-radius: 10px; background: var(--bv-fill); color: var(--bv-text); font-size: 14px; outline: none; }
+        .bv-auth-input::placeholder { color: var(--bv-muted); opacity: 0.8; }
+        .bv-auth-input:focus { border-color: var(--bv-primary); box-shadow: 0 0 0 3px var(--bv-tint); }
+        .bv-auth-error { display: none; margin-bottom: 10px; padding: 9px 11px; border-radius: 10px; background: rgba(220, 53, 69, 0.12); color: var(--bv-bad-t); font-size: 12px; font-weight: 600; }
+        .bv-auth-link { border: 0; background: none; color: var(--bv-primary); cursor: pointer; padding: 8px 0; font-size: 12px; font-weight: 600; text-decoration: underline; }
+        .bv-auth-user { margin-bottom: 10px; font-size: 13px; color: var(--bv-muted); overflow-wrap: anywhere; }
 
         /* ---------- Rewind ---------- */
         #modal-bateolive-main.rewind-on .bv-fab-container,
+        #modal-bateolive-main.rewind-on .bv-fab-menu,
         #modal-bateolive-main.rewind-on .bv-hud-compass,
         #modal-bateolive-main.rewind-on .bv-hud-speed,
         #modal-bateolive-main.rewind-on .bv-hud-status,
         #modal-bateolive-main.rewind-on .bv-error-banner { display: none !important; }
-        #modal-bateolive-main.rewind-on #bv-drawer { top: 72px; bottom: 190px; }
+        #modal-bateolive-main.rewind-on #bv-drawer { top: calc(78px + env(safe-area-inset-top, 0px)); max-height: calc(100% - 78px - 190px - env(safe-area-inset-top, 0px)); }
 
-        .bv-rw-datebar { display: none; position: absolute; top: 16px; left: 70px; right: 16px; max-width: 420px; height: 44px; z-index: 1500; align-items: center; justify-content: center; gap: 10px; padding: 0 16px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.8); border-radius: 22px; background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 3px 12px rgba(0,0,0,0.25); color: #00529b; font: 700 14px 'Inter', sans-serif; cursor: pointer; }
+        .bv-rw-datebar { display: none; position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); left: 75px; right: 20px; max-width: 420px; height: 45px; z-index: 1500; align-items: center; justify-content: center; gap: 10px; padding: 0 16px; box-sizing: border-box; border: 1px solid var(--bv-border); border-radius: 22px; background: var(--bv-glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: var(--bv-shadow); color: var(--bv-primary); font-size: 14px; font-weight: 700; line-height: 1; font-family: inherit; cursor: pointer; }
         .bv-rw-datebar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .bv-rw-datebar i:last-child { font-size: 11px; opacity: 0.7; }
         #modal-bateolive-main.rewind-on .bv-rw-datebar { display: flex; }
 
-        .bv-rw-panel { display: none; position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(560px, calc(100% - 24px)); box-sizing: border-box; z-index: 1500; padding: 10px 16px 12px; border-radius: 20px; background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 4px 18px rgba(0,0,0,0.25); font-family: 'Inter', sans-serif; }
+        .bv-rw-panel { display: none; position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(560px, calc(100% - 24px)); box-sizing: border-box; z-index: 1500; padding: 10px 16px 12px; border-radius: 20px; background: var(--bv-glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--bv-border); box-shadow: var(--bv-shadow); font-family: inherit; }
         #modal-bateolive-main.rewind-on .bv-rw-panel { display: block; }
         .bv-rw-slider-wrap { position: relative; padding-top: 40px; }
-        .bv-rw-bubble { position: absolute; top: 0; left: 0; transform: translateX(-50%); background: #00529b; border-radius: 10px; padding: 4px 6px; box-shadow: 0 3px 10px rgba(0,0,0,0.3); z-index: 2; }
-        .bv-rw-bubble::after { content: ''; position: absolute; top: 100%; left: calc(50% + var(--arrow, 0px)); transform: translateX(-50%); border: 6px solid transparent; border-top-color: #00529b; }
-        .bv-rw-bubble input { width: 96px; border: 0; background: transparent; color: #fff; text-align: center; font: 800 16px 'Inter', sans-serif; font-variant-numeric: tabular-nums; outline: none; padding: 2px 0; margin: 0; box-sizing: border-box; }
+        .bv-rw-bubble { position: absolute; top: 0; left: 0; transform: translateX(-50%); background: var(--bv-primary); border-radius: 10px; padding: 4px 6px; box-shadow: 0 3px 10px rgba(0,0,0,0.3); z-index: 2; }
+        .bv-rw-bubble::after { content: ''; position: absolute; top: 100%; left: calc(50% + var(--arrow, 0px)); transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--bv-primary); }
+        .bv-rw-bubble input { width: 96px; border: 0; background: transparent; color: #fff; text-align: center; font-size: 16px; font-weight: 800; font-family: inherit; font-variant-numeric: tabular-nums; outline: none; padding: 2px 0; margin: 0; box-sizing: border-box; }
         .bv-rw-bubble input:focus { background: rgba(255,255,255,0.18); border-radius: 6px; }
         .bv-rw-range { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 28px; margin: 0; background: transparent; cursor: pointer; }
         .bv-rw-range:focus { outline: none; }
-        .bv-rw-range::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(to right, #00529b var(--p, 0%), #cfd8e3 var(--p, 0%)); }
-        .bv-rw-range::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -8px; border-radius: 50%; background: #fff; border: 3px solid #00529b; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
-        .bv-rw-range::-moz-range-track { height: 6px; border-radius: 3px; background: #cfd8e3; }
-        .bv-rw-range::-moz-range-progress { height: 6px; border-radius: 3px; background: #00529b; }
-        .bv-rw-range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 3px solid #00529b; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
-        .bv-rw-ends { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: #777; margin-top: 2px; font-variant-numeric: tabular-nums; }
+        .bv-rw-range::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(to right, var(--bv-primary) var(--p, 0%), var(--bv-fill-2) var(--p, 0%)); }
+        .bv-rw-range::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -8px; border-radius: 50%; background: #fff; border: 3px solid var(--bv-primary); box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+        .bv-rw-range::-moz-range-track { height: 6px; border-radius: 3px; background: var(--bv-fill-2); }
+        .bv-rw-range::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--bv-primary); }
+        .bv-rw-range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 3px solid var(--bv-primary); box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+        .bv-rw-ends { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: var(--bv-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
         .bv-rw-controls { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 8px; }
-        .bv-rw-controls button { border: 0; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; font-size: 18px; color: #00529b; background: rgba(0,82,155,0.1); }
+        .bv-rw-controls button { border: 0; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; font-size: 18px; color: var(--bv-primary); background: var(--bv-tint); }
         .bv-rw-controls button:disabled { opacity: 0.35; cursor: default; }
-        #bv-rw-play { width: 58px; height: 58px; font-size: 22px; background: #00529b; color: #fff; box-shadow: 0 4px 12px rgba(0,82,155,0.4); }
-        .bv-rw-speed { text-align: center; margin-top: 6px; font-size: 12px; font-weight: 700; color: #555; }
+        #bv-rw-play { width: 58px; height: 58px; font-size: 22px; background: var(--bv-primary); color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        .bv-rw-speed { text-align: center; margin-top: 6px; font-size: 12px; font-weight: 700; color: var(--bv-muted); }
 
         .bv-rw-cal { max-width: 340px; }
         .bv-rw-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-        .bv-rw-cal-head button { width: 36px; height: 36px; border: 0; border-radius: 50%; background: rgba(0,82,155,0.1); color: #00529b; cursor: pointer; }
+        .bv-rw-cal-head button { width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--bv-tint); color: var(--bv-primary); cursor: pointer; }
         .bv-rw-cal-head button:disabled { opacity: 0.3; cursor: default; }
-        .bv-rw-cal-title { font-weight: 700; color: #00529b; font-size: 15px; }
+        .bv-rw-cal-title { font-weight: 800; color: var(--bv-text); font-size: 15px; }
         .bv-rw-cal-dow, .bv-rw-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
-        .bv-rw-cal-dow span { font-size: 11px; font-weight: 700; color: #888; padding: 4px 0; }
-        .bv-rw-day { aspect-ratio: 1; border: 0; border-radius: 50%; padding: 0; background: transparent; color: #c2c7cf; font: 600 14px 'Inter', sans-serif; cursor: default; }
-        .bv-rw-day.has { color: #00529b; background: rgba(0,82,155,0.1); font-weight: 800; cursor: pointer; }
-        .bv-rw-day.sel { background: #00529b; color: #fff; }
+        .bv-rw-cal-dow span { font-size: 11px; font-weight: 700; color: var(--bv-muted); padding: 4px 0; }
+        .bv-rw-day { aspect-ratio: 1; border: 0; border-radius: 50%; padding: 0; background: transparent; color: var(--bv-muted); opacity: 0.45; font-size: 14px; font-weight: 600; font-family: inherit; cursor: default; }
+        .bv-rw-day.has { color: var(--bv-primary); background: var(--bv-tint); opacity: 1; font-weight: 800; cursor: pointer; }
+        .bv-rw-day.sel { background: var(--bv-primary); color: #fff; opacity: 1; }
+
+        /* ---------- Schermi stretti: il pannello diventa un foglio dal basso, la mappa resta visibile ---------- */
+        @media (max-width: 599px) {
+            #bv-drawer { top: auto; left: 10px; right: 10px; width: auto; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); max-height: 60%; transform: translateY(24px); }
+            #bv-drawer.open { transform: none; }
+            #modal-bateolive-main.rewind-on #bv-drawer { top: auto; bottom: 190px; max-height: calc(100% - 78px - 190px - env(safe-area-inset-top, 0px)); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #bv-drawer, #bv-drawer.open { transition: none; }
+            .bv-st.corrente .bv-st-node { animation: none; }
+            .bv-fab-container .bv-fab, .bv-fab-container.chiuso .bv-fab, .bv-fab-menu i, .bv-tiles-osm { transition: none; }
+            .bv-fab-tema i.swap { animation: none; }
+        }
     </style>
 
     <div id="modal-bateolive-main">
@@ -415,34 +546,46 @@ export function initUIBateoLive() {
             <span id="bv-error-banner-text">Impossibile collegarsi al server. Verifica la connessione.</span>
         </div>
 
-        <div class="bv-fab-container">
+        <div class="bv-fab-container chiuso">
             <div id="bv-fab-gps" class="bv-fab" onclick="toggleBvGPS()" title="Attiva/Disattiva GPS">
                 <i class="fa-solid fa-satellite-dish"></i>
             </div>
-            <div id="bv-fab-center" class="bv-fab" onclick="toggleBvCenterMap()" title="Centra sulla Posizione" style="display: none;">
+            <div id="bv-fab-center" class="bv-fab" onclick="toggleBvCenterMap()" title="Centra sulla posizione" style="display: none;">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M12 2L4 20L12 17L20 20L12 2Z"/></svg>
             </div>
-            <div id="bv-fab-rotate" class="bv-fab" onclick="toggleBvMapRotation()" title="Rotazione Mappa (Rotta in alto)" style="display: none;">
+            <div id="bv-fab-rotate" class="bv-fab" onclick="toggleBvMapRotation()" title="Rotazione mappa (rotta in alto)" style="display: none;">
                 <i class="fa-regular fa-compass"></i>
             </div>
             <div id="bv-fab-nav" class="bv-fab active" onclick="toggleBvNavigatore()" title="Navigatore turno" style="display: none;">
                 <i class="fa-solid fa-route"></i>
             </div>
-            <div id="bv-fab-layers" class="bv-fab" onclick="cambiaStileBvMappa()" title="Cambia Stile Cartografico">
+            <div id="bv-fab-layers" class="bv-fab" onclick="cambiaStileBvMappa()" title="Cambia stile cartografico">
                 <i class="fa-solid fa-layer-group"></i>
             </div>
-            <div id="bv-fab-unit" class="bv-fab" onclick="apriBateoLiveUnitModal()" title="Configura Unità" style="display: none;">
+            <div id="bv-fab-tema" class="bv-fab bv-fab-tema" onclick="toggleBvTema()" role="button" title="Passa al tema scuro" aria-label="Passa al tema scuro">
+                <i class="fa-solid fa-moon"></i>
+            </div>
+            <div id="bv-fab-unit" class="bv-fab" onclick="apriBateoLiveUnitModal()" title="Configura unità" style="display: none;">
                 <i class="fa-solid fa-ship"></i>
             </div>
             <div id="bv-fab-rewind" class="bv-fab" onclick="apriRewind()" title="Rewind: rivedi i movimenti passati"><i class="fa-solid fa-clock-rotate-left"></i></div>
-            <div class="bv-fab" onclick="apriBateoLiveSearchModal()" title="Cerca Mezzo o Fermata"><i class="fa-solid fa-magnifying-glass"></i></div>
-            <div class="bv-fab" onclick="apriBateoLiveFilterModal()" title="Filtra Linee"><i class="fa-solid fa-filter"></i></div>
+            <div class="bv-fab" onclick="apriBateoLiveSearchModal()" title="Cerca mezzo o fermata"><i class="fa-solid fa-magnifying-glass"></i></div>
+            <div class="bv-fab" onclick="apriBateoLiveFilterModal()" title="Filtra linee"><i class="fa-solid fa-filter"></i></div>
+        </div>
+
+        <!-- Apre/chiude la colonna dei tasti (chiusa di base) -->
+        <div id="bv-fab-menu" class="bv-fab bv-fab-menu" onclick="toggleBvMenu()" role="button" aria-expanded="false" aria-label="Mostra i tasti" title="Mostra i tasti">
+            <i class="fa-solid fa-plus"></i>
         </div>
 
         <div id="bv-drawer">
             <div id="bv-drawer-header">
-                <h3 id="bv-drawer-title">Dettagli</h3>
-                <button id="bv-close-btn" onclick="closeBateoLiveDrawer()">✖</button>
+                <div id="bv-drawer-badge"></div>
+                <div class="bv-dh-text">
+                    <h3 id="bv-drawer-title">Dettagli</h3>
+                    <div id="bv-drawer-sub" hidden></div>
+                </div>
+                <button id="bv-close-btn" type="button" onclick="closeBateoLiveDrawer()" aria-label="Chiudi"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div id="bv-drawer-content"></div>
         </div>
@@ -483,9 +626,9 @@ export function initUIBateoLive() {
         <!-- Sottomodale Configurazione Unità -->
         <div id="bv-unit-modal" class="bv-modal-overlay" onclick="chiudiBateoLiveModals(event)">
             <div class="bv-modal" onclick="event.stopPropagation()">
-                <h3>Configurazione Unità</h3>
+                <h3>Configurazione unità</h3>
                 <div style="margin-bottom: 12px;">
-                    <label style="font-size: 12px; font-weight: 600; color: #666; display: block; margin-bottom: 4px;">Nome Unità / Mezzo</label>
+                    <label class="bv-label" for="bv-unit-name-input">Nome unità / mezzo</label>
                     <input type="text" id="bv-unit-name-input" placeholder="Es. M/S 200, M/B 1" autocomplete="off">
                 </div>
                 <button class="bv-modal-btn" onclick="salvaConfigurazioneUnita()">Salva</button>
@@ -495,7 +638,7 @@ export function initUIBateoLive() {
         <!-- Sottomodale Ricerca -->
         <div id="bv-search-modal" class="bv-modal-overlay" onclick="chiudiBateoLiveModals(event)">
             <div class="bv-modal" onclick="event.stopPropagation()">
-                <h3>Cerca Mezzo / Fermata</h3>
+                <h3>Cerca mezzo o fermata</h3>
                 <div class="bv-search-container">
                     <input type="text" id="bv-search-input" placeholder="Es. Rialto, 4.2..." autocomplete="off">
                     <div id="bv-search-suggestions" class="bv-suggestions-dropdown"></div>
@@ -521,9 +664,9 @@ export function initUIBateoLive() {
         <!-- Sottomodale Filtri -->
         <div id="bv-filter-modal" class="bv-modal-overlay" onclick="chiudiBateoLiveModals(event)">
             <div class="bv-modal" onclick="event.stopPropagation()">
-                <h3>Filtra Linee</h3>
+                <h3>Filtra linee</h3>
                 <div id="bv-filter-list" class="bv-filter-list"></div>
-                <button class="bv-modal-btn" onclick="applicaBateoLiveFilter()">Applica Filtro</button>
+                <button class="bv-modal-btn" onclick="applicaBateoLiveFilter()">Applica filtro</button>
             </div>
         </div>
     </div>
@@ -564,6 +707,8 @@ export function initUIBateoLive() {
     window.toggleBvMapRotation = toggleBvMapRotation;
     window.cambiaStileBvMappa = cambiaStileBvMappa;
     window.toggleBvNavigatore = toggleBvNavigatore;
+    window.toggleBvMenu = toggleBvMenu;
+    window.toggleBvTema = toggleBvTema;
     window.apriBateoLiveAuthModal = apriBateoLiveAuthModal;
     window.chiudiBateoLiveAuthModal = chiudiBateoLiveAuthModal;
     window.eseguiBateoLiveLogin = eseguiBateoLiveLogin;
@@ -590,20 +735,18 @@ export function initUIBateoLive() {
         let html = '';
 
         mBoats.slice(0, 4).forEach(b => {
-            const c = getLineColors(b.line);
-            const dotHtml = `<div class="bv-line-dot" style="background-color: ${c.bg}; color: ${c.text}; border-color: ${c.border}; width: 18px; height: 18px; font-size: 8px;">${b.line}</div>`;
             html += `<div class="bv-suggestion-item" onclick="selezionaBateoLiveSuggestion('boat', '${b.id}')">
-                        ${dotHtml} <span>🚤 ${b.label}</span>
+                        ${bvDotLinea(b.line)} <span>${bvEsc(b.label)}</span>
                      </div>`;
         });
 
         mStops.slice(0, 5).forEach(s => {
             html += `<div class="bv-suggestion-item" onclick="selezionaBateoLiveSuggestion('stop', '${s.id}')">
-                        ⚓ <span>${s.name}</span>
+                        <i class="fa-solid fa-anchor bv-sugg-ico"></i> <span>${bvEsc(s.name)}</span>
                      </div>`;
         });
 
-        if (!html) html = `<div class="bv-suggestion-item" style="color:#999; justify-content: center;">Nessun risultato trovato</div>`;
+        if (!html) html = `<div class="bv-suggestion-item vuoto">Nessun risultato trovato</div>`;
 
         suggBox.innerHTML = html;
         suggBox.classList.add('active');
@@ -687,7 +830,55 @@ onAuthStateChanged(bateoliveAuth, () => aggiornaBateoLiveAuthUI());
 // LOGICA DI CONTROLLO MOTORE & GPS
 // ==========================================
 
+// ---- Tema chiaro/scuro: segue il sistema; il tasto sole/luna lo forza ----
+// Il tema forzato vale solo finché la pagina resta aperta, non viene salvato (null = segue il sistema).
+let bvTemaForzato = null;
+let bvTemaAvviato = false;
+
+function bvAggiornaIconaTema(scuro, anima) {
+    const btn = document.getElementById('bv-fab-tema');
+    const ico = btn && btn.querySelector('i');
+    if (!ico) return;
+    ico.className = scuro ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+    const testo = scuro ? 'Passa al tema chiaro' : 'Passa al tema scuro';
+    btn.title = testo;
+    btn.setAttribute('aria-label', testo);
+    if (anima) { void ico.offsetWidth; ico.classList.add('swap'); }
+}
+
+function bvAggiornaTema(anima) {
+    const root = document.getElementById('modal-bateolive-main');
+    if (!root) return;
+    const sistemaScuro = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const scuro = bvTemaForzato ? bvTemaForzato === 'dark' : sistemaScuro;
+    root.classList.toggle('bv-dark', scuro);
+    bvAggiornaIconaTema(scuro, anima === true);
+    // barra di stato del telefono in tinta con la mappa
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', scuro ? '#1c2430' : '#ffffff');
+}
+
+function toggleBvTema() {
+    const root = document.getElementById('modal-bateolive-main');
+    if (!root) return;
+    bvTemaForzato = root.classList.contains('bv-dark') ? 'light' : 'dark';
+    bvAggiornaTema(true);
+}
+
+function avviaOsservatoreTema() {
+    bvAggiornaTema();
+    if (bvTemaAvviato) return;
+    bvTemaAvviato = true;
+    try {
+        if (window.matchMedia) {
+            const mq = window.matchMedia('(prefers-color-scheme: dark)');
+            if (mq.addEventListener) mq.addEventListener('change', () => bvAggiornaTema());
+        }
+    } catch (e) { /* il tema non deve mai rompere la mappa */ }
+}
+
 export async function avviaMotoreBateoLive(db, auth, userData, isAdmin) {
+    tracciaApertura('/bateolive_standalone', 'BateoLive Standalone');
     currentUserId = (auth && auth.currentUser) ? auth.currentUser.uid : 'user_' + Math.random().toString(36).substr(2, 9);
     currentUserName = (userData && userData.nome) ? userData.nome : "Collega";
     userMansione = (userData && userData.mansione) || null;
@@ -696,11 +887,12 @@ export async function avviaMotoreBateoLive(db, auth, userData, isAdmin) {
 
     initUIBateoLive();
     document.getElementById('modal-bateolive-main').style.display = 'flex';
+    avviaOsservatoreTema();
 
     await loadMapDependencies();
 
     if (!map) {
-        baseOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
+        baseOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'bv-tiles-osm' });
         baseSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
         nauticLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 18 });
 
@@ -769,7 +961,7 @@ function cambiaStileBvMappa() {
 
     if (currentMapMode === 0) {
         map.addLayer(baseOSM);
-        hudStatus.innerText = "Mappa Base Nautica";
+        hudStatus.innerText = "Mappa base nautica";
     } else if (currentMapMode === 1) {
         map.addLayer(baseSat);
         hudStatus.innerText = "Mappa Satellitare";
@@ -787,6 +979,29 @@ function cambiaStileBvMappa() {
             hudStatus.style.display = 'none';
         }
     }, 2000);
+}
+
+let menuFabAperto = false;
+let menuFabTimer = null;
+function toggleBvMenu(forza = null) {
+    const cont = document.querySelector('#modal-bateolive-main .bv-fab-container');
+    const btn = document.getElementById('bv-fab-menu');
+    if (!cont || !btn) return;
+    const apri = forza !== null ? !!forza : !menuFabAperto;
+    menuFabAperto = apri;
+    const visibili = [...cont.children].filter(el => el.style.display !== 'none');
+    visibili.forEach((el, i) => {
+        const dalBasso = visibili.length - 1 - i;
+        el.style.transitionDelay = ((apri ? dalBasso : i) * 40) + 'ms';
+    });
+    cont.classList.toggle('chiuso', !apri);
+    btn.classList.toggle('active', apri);
+    btn.setAttribute('aria-expanded', String(apri));
+    const testo = apri ? 'Nascondi i tasti' : 'Mostra i tasti';
+    btn.setAttribute('aria-label', testo);
+    btn.title = testo;
+    clearTimeout(menuFabTimer);
+    menuFabTimer = setTimeout(() => visibili.forEach(el => { el.style.transitionDelay = ''; }), 700);
 }
 
 function toggleBvCenterMap(forceState = null) {
@@ -867,6 +1082,7 @@ function toggleBvGPS() {
         if (bateoliveAuthenticated) avviaNavigatore();
         
         toggleBvCenterMap(true);
+        toggleBvMapRotation(true);   // col GPS acceso la mappa ruota subito con la rotta
         speedHistory = [];
         
         watchId = navigator.geolocation.watchPosition(elaboraBvPosizioneGPS, (err) => {
@@ -901,7 +1117,7 @@ function elaboraBvPosizioneGPS(position) {
 
     const svgArrow = `
     <div style="transform: rotate(${validHeading}deg); width:32px; height:32px; display:flex; align-items:center; justify-content:center; filter: drop-shadow(0px 3px 6px rgba(0,0,0,0.5)); transition: transform 0.2s linear;">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="#00529b" stroke="white" stroke-width="1.5" stroke-linejoin="round">
+        <svg width="28" height="28" viewBox="0 0 24 24" style="fill:var(--bv-primary)" stroke="white" stroke-width="1.5" stroke-linejoin="round">
             <path d="M12 2L4 20L12 17L20 20L12 2Z"/>
         </svg>
     </div>`;
@@ -985,13 +1201,13 @@ async function sincronizzaPosizioneAltriUtenti() {
 
             if (uLine) {
                 const c = getLineColors(uLine.toUpperCase());
-                iconHtml = `<div class="bv-boat-icon" style="background-color: ${c.bg}; color: ${c.text}; border: 3px solid #28a745; width: 26px; height: 26px; box-sizing: border-box;">${uLine}</div>`;
+                iconHtml = `<div class="bv-boat-icon" style="background-color: ${c.bg}; color: ${c.text}; border: 3px solid var(--bv-ok); width: 26px; height: 26px; box-sizing: border-box;">${uLine}</div>`;
                 iconSize = [26, 26];
                 iconAnchor = [13, 13];
             } else {
                 iconHtml = `
                 <div style="transform: rotate(${uHeading}deg); width:32px; height:32px; display:flex; align-items:center; justify-content:center; filter: drop-shadow(0px 3px 6px rgba(0,0,0,0.5)); transition: transform 0.2s linear;">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="#28a745" stroke="white" stroke-width="1.5" stroke-linejoin="round">
+                    <svg width="28" height="28" viewBox="0 0 24 24" style="fill:var(--bv-ok)" stroke="white" stroke-width="1.5" stroke-linejoin="round">
                         <path d="M12 2L4 20L12 17L20 20L12 2Z"/>
                     </svg>
                 </div>`;
@@ -1001,7 +1217,7 @@ async function sincronizzaPosizioneAltriUtenti() {
 
             let popupContent = `<div style="text-align:center;">Velocità: ${parseFloat(u.speed || 0).toFixed(1)} km/h</div>`;
             if (u.nome && u.nome !== currentUserName) {
-                popupContent = `<div style="text-align:center;"><b>${u.nome}</b><br>Velocità: ${parseFloat(u.speed || 0).toFixed(1)} km/h</div>`;
+                popupContent = `<div style="text-align:center;"><b>${bvEsc(u.nome)}</b><br>Velocità: ${parseFloat(u.speed || 0).toFixed(1)} km/h</div>`;
             }
 
             if (otherUsersMarkers[uid]) {
@@ -1059,6 +1275,7 @@ function chiudiBateoLive() {
     document.getElementById('bv-fab-nav').style.display = 'none';
     document.getElementById('bv-fab-unit').style.display = 'none';
     fermaNavigatore();
+    toggleBvMenu(false);
     document.getElementById('bv-fab-gps').classList.remove('active');
     
     courseUp = false;
@@ -1077,16 +1294,34 @@ function chiudiBateoLive() {
     }
 }
 
+let drawerFocusKey = null;
+
 function closeBateoLiveDrawer() {
     activeSelection = null;
+    drawerFocusKey = null;
     const drawer = document.getElementById('bv-drawer');
     if (drawer) drawer.classList.remove('open');
 }
 
-function openBateoLiveDrawer(title, htmlContent) {
-    document.getElementById('bv-drawer-title').innerText = title;
-    document.getElementById('bv-drawer-content').innerHTML = `<div class="bv-drawer-section">${htmlContent}</div>`;
+// opts: { badge: html a sinistra del titolo, sub: riga sotto il titolo,
+//         focusKey: quando cambia, la lista scorre alla fermata corrente/prossima (gli aggiornamenti live non toccano lo scroll) }
+function openBateoLiveDrawer(title, htmlContent, opts = {}) {
+    const content = document.getElementById('bv-drawer-content');
+    document.getElementById('bv-drawer-title').textContent = title;
+    const sub = document.getElementById('bv-drawer-sub');
+    sub.textContent = opts.sub || '';
+    sub.hidden = !opts.sub;
+    document.getElementById('bv-drawer-badge').innerHTML = opts.badge || '';
+    content.innerHTML = `<div class="bv-drawer-section">${htmlContent}</div>`;
     document.getElementById('bv-drawer').classList.add('open');
+
+    if (!opts.focusKey) { drawerFocusKey = null; return; }
+    if (opts.focusKey === drawerFocusKey) return;
+    const target = content.querySelector('.bv-st.corrente, .bv-st.prossima');
+    if (!target) return;
+    drawerFocusKey = opts.focusKey;
+    const dy = target.getBoundingClientRect().top - content.getBoundingClientRect().top;
+    content.scrollTop += dy - content.clientHeight / 3;
 }
 
 function chiudiBateoLiveModals(e) {
@@ -1136,7 +1371,7 @@ async function openBateoLiveFilterModalInternal() {
                 </label>
             </div>`;
         });
-        document.getElementById('bv-filter-list').innerHTML = html || '<p style="font-size:13px; color:#666; text-align:center;">Nessuna linea attiva trovata.</p>';
+        document.getElementById('bv-filter-list').innerHTML = html || '<p class="bv-empty">Nessuna linea attiva trovata.</p>';
     } catch (e) {}
 }
 
@@ -1219,7 +1454,7 @@ function locateBateoLiveBoat(staticTripId, liveBoatId) {
         const msgDiv = document.getElementById('msg-' + staticTripId);
         if (msgDiv) {
             msgDiv.innerHTML = "Posizione non disponibile";
-            msgDiv.style.color = "#e53935";
+            msgDiv.style.color = "var(--bv-bad-t)";
             setTimeout(() => { msgDiv.innerHTML = ""; }, 3000);
         }
     }
@@ -1239,32 +1474,56 @@ function formatTime(unixTimestamp) {
 }
 
 function getDelayBadge(delaySec) {
-    if (delaySec === 0 || delaySec === null || delaySec === undefined) return `<span class="bv-badge bv-badge-ok">In orario</span>`;
+    if (delaySec === 0 || delaySec === null || delaySec === undefined) return `<span class="bv-pill bv-pill-ok">In orario</span>`;
     const min = Math.round(delaySec / 60);
-    if (min >= 1) return `<span class="bv-badge bv-badge-delay">+${min}'</span>`;
-    if (min <= -1) return `<span class="bv-badge bv-badge-early">${min}'</span>`;
-    return `<span class="bv-badge bv-badge-ok">In orario</span>`;
+    if (min >= 1) return `<span class="bv-pill bv-pill-bad" title="In ritardo di ${min} min">+${min}'</span>`;
+    if (min <= -1) return `<span class="bv-pill bv-pill-warn" title="In anticipo di ${-min} min">${min}'</span>`;
+    return `<span class="bv-pill bv-pill-ok">In orario</span>`;
+}
+
+const bvEsc = (v) => esc(v == null ? '' : String(v));
+
+// Badge della linea con i colori ACTV (gli stessi di mappa e navigatore)
+function bvDotLinea(line) {
+    const c = getLineColors(String(line).toUpperCase());
+    return `<span class="bv-line-dot" style="background-color:${c.bg};color:${c.text};border-color:${c.border};">${bvEsc(line)}</span>`;
+}
+
+// Riquadro di riepilogo in cima al pannello
+function bvRiepilogo(etichetta, valore, destra = '') {
+    return `<div class="bv-sum"><div class="bv-sum-txt"><div class="bv-sum-lbl">${etichetta}</div><div class="bv-sum-val">${bvEsc(valore)}</div></div>${destra ? `<div class="bv-sum-right">${destra}</div>` : ''}</div>`;
+}
+
+// Riga del percorso: nodo sulla linea verticale, nome fermata, orari e badge
+function bvRigaFermata(stato, extra, nome, orari, badge) {
+    const cls = stato === 'PASSED' ? 'passata' : (stato === 'CURRENT' ? 'corrente' : 'futura');
+    return `<div class="bv-st ${cls}${extra || ''}"><span class="bv-st-node"></span><span class="bv-st-name">${bvEsc(nome)}</span><div class="bv-st-time">${orari}${badge || ''}</div></div>`;
+}
+
+function bvRigaOrario(etichetta, valore, extraClass = '') {
+    return `<div class="bv-st-line">${etichetta ? `<span class="bv-st-lbl">${etichetta}</span>` : ''}${valore}</div>`;
 }
 
 function buildTimeLine(label, scheduled, estimated, isDelayed) {
     if (estimated) {
         if (isDelayed && scheduled) {
-            return `<div class="bv-time-sub">${label}: <span class="bv-time-strike">${formatTime(scheduled)}</span><span class="bv-time-main">${formatTime(estimated)}</span></div>`;
+            return bvRigaOrario(label, `<span class="bv-st-strike">${formatTime(scheduled)}</span><b class="bv-st-main">${formatTime(estimated)}</b>`);
         }
-        return `<div class="bv-time-sub">${label}: <span class="bv-time-main">${formatTime(scheduled || estimated)}</span></div>`;
+        return bvRigaOrario(label, `<b class="bv-st-main">${formatTime(scheduled || estimated)}</b>`);
     }
-    return `<div class="bv-time-sub">${label}: <span class="bv-time-main">--:--</span></div>`;
+    return bvRigaOrario(label, `<b class="bv-st-main">--:--</b>`);
 }
 
 async function renderBoatDrawer(boat) {
     activeSelection = { type: 'boat', data: boat };
-    let baseInfo = `
-        <div class="bv-speed-card" style="justify-content: flex-start;">
-            <div>Linea <strong style="font-size:16px;">${boat.line}</strong></div>
-        </div>`;
+    const opts = {
+        badge: bvDotLinea(boat.line),
+        sub: boat.line && boat.line !== '-' ? `Linea ${boat.line}` : '',
+        focusKey: `boat-${boat.id}`
+    };
 
     if (!boat.tripId) {
-        openBateoLiveDrawer(boat.label, baseInfo + `<p style="color:#666; font-size:14px;">In attesa di assegnazione corsa...</p>`);
+        openBateoLiveDrawer(boat.label, `<p class="bv-empty">In attesa di assegnazione corsa…</p>`, opts);
         return;
     }
 
@@ -1275,116 +1534,103 @@ async function renderBoatDrawer(boat) {
         if (!activeSelection || activeSelection.type !== 'boat' || activeSelection.data.id !== boat.id) return;
 
         if (stopTimes.length === 0) {
-            openBateoLiveDrawer(boat.label, baseInfo + `<p style="color:#666; font-size:14px;">Nessun orario disponibile per la corsa.</p>`);
+            openBateoLiveDrawer(boat.label, `<p class="bv-empty">Nessun orario disponibile per la corsa.</p>`, opts);
             return;
         }
 
-        let html = baseInfo + `<div class="bv-timeline-title">Percorso corsa attuale</div>`;
-        stopTimes.forEach(st => {
-            let badgeHtml = getDelayBadge(st.delay);
+        // riepilogo: dove si trova l'unità adesso (in sosta) o qual è la prossima fermata
+        const idxCorr = stopTimes.findIndex(st => st.status === 'CURRENT');
+        const idxProx = idxCorr >= 0 ? idxCorr : stopTimes.findIndex(st => st.status === 'FUTURE');
+        const prox = stopTimes[idxProx];
+        let riepilogo;
+        if (!prox) {
+            riepilogo = bvRiepilogo('Stato', 'Corsa terminata');
+        } else if (idxCorr >= 0) {
+            riepilogo = bvRiepilogo('In sosta a', prox.stopName, getDelayBadge(prox.delay));
+        } else {
+            const ora = formatTime(prox.estimatedDeparture || prox.estimatedArrival || prox.scheduledDeparture || prox.scheduledArrival);
+            riepilogo = bvRiepilogo('Prossima fermata', prox.stopName, `<div class="bv-sum-time">${ora}</div>${getDelayBadge(prox.delay)}`);
+        }
+
+        let html = riepilogo + `<div class="bv-timeline-title">Percorso corsa attuale</div><div class="bv-tl">`;
+        stopTimes.forEach((st, i) => {
             const isOffSchedule = Math.abs(Math.round(st.delay / 60)) >= 1;
 
-            const passedClass = st.status === 'PASSED' ? 'bv-stop-passed' : (st.status === 'CURRENT' ? 'bv-stop-current' : '');
-            const dotIndicator = st.status === 'PASSED' ? '✔️' : (st.status === 'CURRENT' ? '⚓' : '<div class="bv-dot"></div>');
-
-            let timeContent = "";
+            let orari;
             if (st.status === 'FUTURE') {
                 const targetSched = st.scheduledDeparture || st.scheduledArrival;
                 const targetEst = st.estimatedDeparture || st.estimatedArrival;
-
                 if (targetEst) {
                     if (isOffSchedule && targetSched) {
-                        timeContent = `<div><span class="bv-time-strike">${formatTime(targetSched)}</span><span class="bv-time-main">${formatTime(targetEst)}</span></div>`;
+                        orari = bvRigaOrario('', `<span class="bv-st-strike">${formatTime(targetSched)}</span><b class="bv-st-main bv-st-big">${formatTime(targetEst)}</b>`);
                     } else {
-                        timeContent = `<div><span class="bv-time-main">${formatTime(targetSched || targetEst)}</span></div>`;
+                        orari = bvRigaOrario('', `<b class="bv-st-main bv-st-big">${formatTime(targetSched || targetEst)}</b>`);
                     }
                 } else {
-                    timeContent = `<div><span class="bv-time-main">--:--</span></div>`;
+                    orari = bvRigaOrario('', `<b class="bv-st-main bv-st-big">--:--</b>`);
                 }
             } else {
-                let arrHtml = buildTimeLine("Arr", st.scheduledArrival, st.estimatedArrival, isOffSchedule);
-                let depHtml = "";
-                if (st.status === 'CURRENT') {
-                    depHtml = `<div class="bv-time-sub">Part: <span class="bv-time-main" style="color:#00529b;">In sosta...</span></div>`;
-                } else {
-                    depHtml = buildTimeLine("Part", st.scheduledDeparture, st.estimatedDeparture, isOffSchedule);
-                }
-                timeContent = arrHtml + depHtml;
+                const arrHtml = buildTimeLine('Arrivo', st.scheduledArrival, st.estimatedArrival, isOffSchedule);
+                const depHtml = st.status === 'CURRENT'
+                    ? bvRigaOrario('Partenza', `<b class="bv-st-main bv-st-here">In sosta…</b>`)
+                    : buildTimeLine('Partenza', st.scheduledDeparture, st.estimatedDeparture, isOffSchedule);
+                orari = arrHtml + depHtml;
             }
 
-            html += `
-            <div class="bv-time-row ${passedClass}" style="cursor:default;">
-                <div class="bv-stop-info">
-                    ${dotIndicator}
-                    <span class="bv-stop-name">${st.stopName}</span>
-                </div>
-                <div class="bv-time-block">
-                    ${timeContent}
-                    ${badgeHtml}
-                </div>
-            </div>`;
+            html += bvRigaFermata(st.status, i === idxProx ? ' prossima' : '', st.stopName, orari, getDelayBadge(st.delay));
         });
-        openBateoLiveDrawer(boat.label, html);
+        html += `</div>`;
+        openBateoLiveDrawer(boat.label, html, opts);
     } catch (e) { console.error(e); }
 }
 
 async function renderStopDrawer(stop) {
     if (rewind.attivo) return; // in rewind le fermate non mostrano i dati live
     activeSelection = { type: 'stop', data: stop };
+    const opts = { badge: '<span class="bv-dh-ico"><i class="fa-solid fa-anchor"></i></span>', sub: 'Fermata' };
     try {
         const res = await fetch(`${API_URL}/api/stop/${stop.id}`);
         const arrivals = await res.json();
 
         if (!activeSelection || activeSelection.type !== 'stop' || activeSelection.data.id !== stop.id) return;
 
-        let html = `<div class="bv-timeline-title" style="margin-bottom:20px;">Partenze (Fino a -1h / +3h)</div>`;
+        let html = `<div class="bv-timeline-title">Partenze da un'ora fa alle prossime 3 ore</div>`;
         if (arrivals.length === 0) {
-            html += `<p style="color:#666; font-size:14px;">Nessuna partenza in programma.</p>`;
+            html += `<p class="bv-empty">Nessuna partenza in programma.</p>`;
         } else {
             arrivals.forEach(arr => {
-                let badgeHtml = getDelayBadge(arr.delay);
+                const badgeHtml = getDelayBadge(arr.delay);
                 const isOffSchedule = Math.abs(Math.round(arr.delay / 60)) >= 1;
 
-                let timeHtml = "";
+                let timeHtml;
                 if (arr.estimated) {
                     if (isOffSchedule && arr.scheduled) {
-                        timeHtml = `<span class="bv-time-strike">${formatTime(arr.scheduled)}</span><span class="bv-time-main">${formatTime(arr.estimated)}</span>`;
+                        timeHtml = bvRigaOrario('', `<span class="bv-st-strike">${formatTime(arr.scheduled)}</span><b class="bv-st-main">${formatTime(arr.estimated)}</b>`);
                     } else {
-                        timeHtml = `<span class="bv-time-main">${formatTime(arr.scheduled || arr.estimated)}</span>`;
+                        timeHtml = bvRigaOrario('', `<b class="bv-st-main">${formatTime(arr.scheduled || arr.estimated)}</b>`);
                     }
                 } else {
-                    timeHtml = `<span class="bv-time-main">--:--</span>`;
+                    timeHtml = bvRigaOrario('', `<b class="bv-st-main">--:--</b>`);
                 }
 
-                let opacityClass = arr.status === 'PASSED' ? 'style="opacity: 0.5;"' : (arr.status === 'CURRENT' ? 'style="background: #f0f8ff; padding: 10px; border-radius: 8px; margin: -10px;"' : '');
+                const cls = arr.status === 'PASSED' ? ' passata' : (arr.status === 'CURRENT' ? ' corrente' : '');
+                let stato = '';
+                if (arr.status === 'PASSED') stato = '<span>Partito</span>';
+                else if (arr.status === 'CURRENT') stato = '<span class="here">In sosta</span>';
 
-                let statusTextHtml = '';
-                if (arr.status === 'PASSED') statusTextHtml = '<small style="color:#666; margin-top:2px;">(Partito)</small>';
-                else if (arr.status === 'CURRENT') statusTextHtml = '<small style="color:#00529b; margin-top:2px; font-weight:600;">(In sosta)</small>';
-
-                const colors = getLineColors(arr.routeId);
-                const dotHtml = `<div class="bv-line-dot" style="background-color: ${colors.bg}; color: ${colors.text}; border-color: ${colors.border}; margin-right: 8px;">${arr.routeId}</div>`;
-
+                const dest = bvEsc(arr.destination || 'Sconosciuta');
                 html += `
-                <div class="bv-time-row" ${opacityClass} onclick="locateBateoLiveBoat('${arr.tripId}', '${arr.liveBoatId || ''}')">
-                    <div class="bv-stop-info" style="flex-direction: column; align-items: flex-start; gap: 4px; padding-bottom:4px;">
-                        <div style="display: flex; align-items: center; width: 100%;">
-                            ${dotHtml}
-                            <span style="font-size: 14px; font-weight: 600; color: #333; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${arr.destination || 'Sconosciuta'}">${arr.destination || 'Sconosciuta'}</span>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; width:100%;">
-                            ${statusTextHtml}
-                            <span id="msg-${arr.tripId}" style="font-size:10px; font-weight:600; height:12px; margin-left: auto;"></span>
-                        </div>
+                <div class="bv-dep${cls}" onclick="locateBateoLiveBoat('${arr.tripId}', '${arr.liveBoatId || ''}')">
+                    ${bvDotLinea(arr.routeId)}
+                    <div class="bv-dep-txt">
+                        <div class="bv-dep-dest" title="${dest}">${dest}</div>
+                        <div class="bv-dep-sub">${stato}<span id="msg-${arr.tripId}" class="bv-dep-msg"></span></div>
                     </div>
-                    <div class="bv-time-block">
-                        <div>${timeHtml}</div>
-                        ${badgeHtml}
-                    </div>
+                    <div class="bv-dep-time">${timeHtml}${badgeHtml}</div>
                 </div>`;
             });
         }
-        openBateoLiveDrawer(stop.name, html);
+        openBateoLiveDrawer(stop.name, html, opts);
     } catch (e) { console.error(e); }
 }
 
@@ -2601,8 +2847,9 @@ async function rwCaricaChunk(c) {
         if (sessione !== rewind.sessione) return;                 // nel frattempo si è cambiato giorno o si è usciti
         for (const [id, bt] of Object.entries(dati.boats || {})) {
             let tb = rewind.boats.get(id);
-            if (!tb) { tb = { line: bt.line, pts: [] }; rewind.boats.set(id, tb); }
+            if (!tb) { tb = { line: bt.line, label: bt.label || null, pts: [] }; rewind.boats.set(id, tb); }
             if (bt.line && bt.line !== '-') tb.line = bt.line;
+            if (bt.label) tb.label = bt.label;
             tb.pts = rwUnisci(tb.pts, bt.pts);
         }
         rewind.loaded.add(c);
@@ -2776,8 +3023,14 @@ async function rwApriBarca(id) {
     const b = rewind.boats.get(id);
     const date = rewind.date, t = rewind.t;
     activeSelection = { type: 'rewind', id };
-    const intest = `<div class="bv-speed-card" style="justify-content: flex-start;"><div>Linea <strong style="font-size:16px;">${esc(b ? b.line : '-')}</strong> · ${rwOra(t, true)}</div></div>`;
-    openBateoLiveDrawer(`Linea ${b ? b.line : '-'}`, intest + '<p style="color:#666; font-size:14px;">Caricamento…</p>');
+    const linea = b ? b.line : '-';
+    // Nome dell'unità: dallo storico del server, altrimenti dall'elenco live (la flotta è la stessa)
+    const nomeUnita = (b && b.label) || (globalBoats.find(x => x.id === id) || {}).label || null;
+    const titolo = nomeUnita || `Linea ${linea}`;
+    const sottotitolo = (l) => `${nomeUnita ? `Linea ${l} · ` : ''}Rewind alle ${rwOra(t, true)}`;
+    const sub = sottotitolo(linea);
+    const opts = { badge: bvDotLinea(linea), sub };
+    openBateoLiveDrawer(titolo, '<p class="bv-empty">Caricamento…</p>', opts);
     const ancora = () => activeSelection && activeSelection.type === 'rewind' && activeSelection.id === id && rewind.attivo;
     try {
         const r1 = await fetch(`${API_URL}/api/history/${date}/trips?boat=${encodeURIComponent(id)}`);
@@ -2786,30 +3039,36 @@ async function rwApriBarca(id) {
         if (!ancora()) return;
         let corsa = corse.find(c => c.first - 600 <= t && t <= c.last + 600);
         if (!corsa) corsa = [...corse].reverse().find(c => c.first <= t);
-        if (!corsa) { openBateoLiveDrawer(`Linea ${b ? b.line : '-'}`, intest + '<p style="color:#666; font-size:14px;">Nessuna corsa registrata per questa unità in questo momento.</p>'); return; }
+        if (!corsa) { openBateoLiveDrawer(titolo, '<p class="bv-empty">Nessuna corsa registrata per questa unità in questo momento.</p>', opts); return; }
         const r2 = await fetch(`${API_URL}/api/history/${date}/trip/${encodeURIComponent(corsa.trip)}`);
         if (!r2.ok) throw new Error('HTTP ' + r2.status);
         const det = await r2.json();
         if (!ancora()) return;
 
-        let html = intest + `<div class="bv-timeline-title">${esc(det.headsign || 'Corsa')} · passaggi registrati</div>`;
+        let html = det.headsign ? bvRiepilogo('Destinazione', det.headsign) : '';
+        html += `<div class="bv-timeline-title">Passaggi registrati</div><div class="bv-tl">`;
+        let primo = true;
         det.stops.forEach(s => {
             const dep = s.departure, arr = s.arrival;
             const passata = dep !== null && dep <= t;
             const inSosta = !passata && arr <= t;
-            const cls = passata ? 'bv-stop-passed' : (inSosta ? 'bv-stop-current' : '');
-            const icona = passata ? '✔️' : (inSosta ? '⚓' : '<div class="bv-dot"></div>');
-            const orari = `<div class="bv-time-sub">Prog: <span class="bv-time-main">${rwOra(s.scheduled)}</span></div>`
-                + `<div class="bv-time-sub">Arr: <span class="bv-time-main">${rwOra(arr)}</span>${dep !== null ? ` · Part: <span class="bv-time-main">${rwOra(dep)}</span>` : ''}</div>`;
-            html += `<div class="bv-time-row ${cls}" style="cursor:default;">
-                <div class="bv-stop-info">${icona}<span class="bv-stop-name">${esc(s.stopName || s.stopId)}</span></div>
-                <div class="bv-time-block">${orari}${getDelayBadge(s.delay)}</div>
-            </div>`;
+            const stato = passata ? 'PASSED' : (inSosta ? 'CURRENT' : 'FUTURE');
+            const extra = (!passata && primo && !inSosta) ? ' prossima' : '';
+            if (!passata) primo = false;
+            const orari = bvRigaOrario('Programmato', `<b class="bv-st-main">${rwOra(s.scheduled)}</b>`)
+                + bvRigaOrario('Arrivo', `<b class="bv-st-main">${rwOra(arr)}</b>`)
+                + (dep !== null ? bvRigaOrario('Partenza', `<b class="bv-st-main">${rwOra(dep)}</b>`) : '');
+            html += bvRigaFermata(stato, extra, s.stopName || s.stopId, orari, getDelayBadge(s.delay));
         });
-        openBateoLiveDrawer(`Linea ${det.line || (b ? b.line : '-')}`, html);
+        html += `</div>`;
+        const lineaFinale = det.line || linea;
+        const nomeFinale = nomeUnita || det.boatLabel || null;
+        const titoloFinale = nomeFinale || `Linea ${lineaFinale}`;
+        const subFinale = `${nomeFinale ? `Linea ${lineaFinale} · ` : ''}Rewind alle ${rwOra(t, true)}`;
+        openBateoLiveDrawer(titoloFinale, html, { badge: bvDotLinea(lineaFinale), sub: subFinale, focusKey: `rw-${id}-${corsa.trip}` });
     } catch (e) {
         console.error('Rewind: dettaglio battello', e);
-        if (ancora()) openBateoLiveDrawer(`Linea ${b ? b.line : '-'}`, intest + '<p style="color:#e53935; font-size:14px;">Impossibile caricare il dettaglio.</p>');
+        if (ancora()) openBateoLiveDrawer(titolo, '<p class="bv-empty err">Impossibile caricare il dettaglio.</p>', opts);
     }
 }
 

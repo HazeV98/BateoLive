@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#e0e0e0">
+    <meta name="theme-color" content="#ffffff">
     <title>BateoLive</title>
 
     <link rel="icon" type="image/png" href="assets/icon.png">
@@ -13,11 +13,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <script defer
-        src="https://api.bateolive.stream/stats/script.js"
-        data-website-id="2b1a80cf-f9e6-4173-9ff3-0c1adefe19e3"
-        data-host-url="https://bateolive.tailec23c3.ts.net/stats">
-    </script>
+    <!-- Statistiche Umami: le carica bateolive_standalone.js all'avvio (tracciaApertura), non serve il tag qui. -->
 
     <style>
         html, body {
@@ -26,7 +22,7 @@
             margin: 0;
             padding: 0;
             overflow: hidden;
-            background: #e0e0e0;
+            background: #ffffff;
         }
 
         body {
@@ -45,7 +41,7 @@
             justify-content: center;
             flex-direction: column;
             gap: 12px;
-            background: #e0e0e0;
+            background: #ffffff;
             color: #00529b;
             transition: opacity .2s ease;
         }
@@ -70,6 +66,13 @@
             line-height: 1.45;
             font-size: 14px;
         }
+
+        /* Schermata di caricamento in tema scuro (il modulo poi segue lo stesso tema del sistema) */
+        @media (prefers-color-scheme: dark) {
+            html, body, #boot-screen { background: #1c2430; }
+            #boot-screen { color: #6ea8ff; }
+            #boot-error { background: #243044; color: #ff9aa2; box-shadow: 0 5px 20px rgba(0,0,0,.5); }
+        }
     </style>
 </head>
 <body>
@@ -85,7 +88,7 @@
         index.html non contiene più una seconda copia della UI o della logica.
 
         File richiesti nella stessa cartella:
-          - bateolive.js
+          - bateolive_standalone.js
           - turni-core.js
     -->
     <script type="module">
