@@ -2941,6 +2941,7 @@ function rwDisegna() {
     }
     rewind.nVisibili = visibili.size;
     rwAggiornaUI();
+    rwAggiornaBarca();
 }
 
 function rwSetPlaying(si) {
@@ -3027,56 +3028,155 @@ function rwDisegnaCal() {
 }
 
 // ---------------------------------------------------------------- dettaglio battello (dallo storico)
+// ---- Pannello unità in rewind: segue il tempo che scorre ----
+// Tiene i dati della corsa e ridisegna le fermate (passate / in sosta / prossima) a ogni cambio di stato;
+// se l'unità passa a una corsa successiva, carica da sola quella nuova.
+let rewindBarca = null;
+
+function rwScegliCorsa(corse, t) {
+    let corsa = corse.find(c => c.first - 600 <= t && t <= c.last + 600);
+    if (!corsa) corsa = [...corse].reverse().find(c => c.first <= t);
+    return corsa || null;
+}
+
+function rwBarcaAncora(d) {
+    return rewindBarca === d && rewind.attivo && activeSelection && activeSelection.type === 'rewind' && activeSelection.id === d.id;
+}
+
+function rwBarcaIntestazione(d) {
+    const det = d.det;
+    const lineaFinale = (det && det.line) || d.linea;
+    const nome = d.nomeUnita || (det && det.boatLabel) || null;
+    return {
+        titolo: nome || `Linea ${lineaFinale}`,
+        badge: bvDotLinea(lineaFinale),
+        sub: `${nome ? `Linea ${lineaFinale} · ` : ''}Rewind alle ${rwOra(rewind.t, true)}`
+    };
+}
+
+function rwRenderBarca(forza = false) {
+    const d = rewindBarca;
+    if (!d || !d.det) return;
+    const t = rewind.t, det = d.det;
+
+    let primo = true;
+    const righe = det.stops.map(s => {
+        const dep = s.departure, arr = s.arrival;
+        const passata = dep !== null && dep <= t;
+        const inSosta = !passata && arr <= t;
+        const stato = passata ? 'PASSED' : (inSosta ? 'CURRENT' : 'FUTURE');
+        const extra = (!passata && primo && !inSosta) ? ' prossima' : '';
+        if (!passata) primo = false;
+        return { s, dep, arr, stato, extra };
+    });
+    const firma = righe.map(r => r.stato[0] + (r.extra ? 'n' : '')).join('');
+    const intest = rwBarcaIntestazione(d);
+
+    // stesso stato di prima: si aggiorna solo l'orario del rewind nel sottotitolo
+    if (!forza && firma === d.firma) {
+        const sub = document.getElementById('bv-drawer-sub');
+        if (sub && d.subTxt !== intest.sub) { sub.textContent = intest.sub; d.subTxt = intest.sub; }
+        return;
+    }
+
+    // se la fermata corrente era in vista, dopo l'aggiornamento la lista la segue; se hai scorso altrove non ti sposta
+    const content = document.getElementById('bv-drawer-content');
+    let segui = false;
+    if (!forza && d.firma && content) {
+        const vecchio = content.querySelector('.bv-st.corrente, .bv-st.prossima');
+        if (vecchio) {
+            const r = vecchio.getBoundingClientRect(), c = content.getBoundingClientRect();
+            segui = r.bottom > c.top && r.top < c.bottom;
+        }
+    }
+
+    let html = `<div class="bv-timeline-title">Passaggi registrati</div><div class="bv-tl">`;
+    righe.forEach(({ s, dep, arr, stato, extra }) => {
+        const orari = bvRigaOrario('Programmato', `<b class="bv-st-main">${rwOra(s.scheduled)}</b>`)
+            + bvRigaOrario('Arrivo', `<b class="bv-st-main">${rwOra(arr)}</b>`)
+            + (dep !== null ? bvRigaOrario('Partenza', `<b class="bv-st-main">${rwOra(dep)}</b>`) : '');
+        html += bvRigaFermata(stato, extra, s.stopName || s.stopId, orari, getDelayBadge(s.delay));
+    });
+    html += `</div>`;
+    const riepilogo = det.headsign ? bvRiepilogo('Destinazione', det.headsign) : '';
+
+    openBateoLiveDrawer(intest.titolo, html, { badge: intest.badge, sub: intest.sub, pinned: riepilogo, focusKey: `rw-${d.id}-${d.trip}` });
+    d.firma = firma;
+    d.subTxt = intest.sub;
+
+    if (segui && content) {
+        const nuovo = content.querySelector('.bv-st.corrente, .bv-st.prossima');
+        if (nuovo) {
+            const dy = nuovo.getBoundingClientRect().top - content.getBoundingClientRect().top;
+            content.scrollTo({ top: content.scrollTop + dy - content.clientHeight / 3, behavior: 'smooth' });
+        }
+    }
+}
+
+async function rwCaricaCorsaBarca(d, corsa) {
+    d.caricando = true;
+    try {
+        const r = await fetch(`${API_URL}/api/history/${d.date}/trip/${encodeURIComponent(corsa.trip)}`);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const det = await r.json();
+        if (!rwBarcaAncora(d)) return;
+        d.trip = corsa.trip; d.det = det; d.firma = ''; d.caricando = false;
+        rwRenderBarca(true);
+    } catch (e) {
+        console.error('Rewind: dettaglio battello', e);
+        d.caricando = false; d.errore = true;
+        if (rwBarcaAncora(d)) {
+            const i = rwBarcaIntestazione(d);
+            openBateoLiveDrawer(i.titolo, '<p class="bv-empty err">Impossibile caricare il dettaglio.</p>', { badge: i.badge, sub: i.sub });
+        }
+    }
+}
+
+// chiamata a ogni ridisegno del rewind (tempo che scorre, barra trascinata, cambio giorno)
+function rwAggiornaBarca() {
+    const d = rewindBarca;
+    if (!d) return;
+    if (!rwBarcaAncora(d) || rewind.date !== d.date) {
+        if (rewind.attivo && rewind.date !== d.date && rwBarcaAncora(d)) closeBateoLiveDrawer();
+        rewindBarca = null;
+        return;
+    }
+    if (d.caricando || d.errore) return;
+    const nuova = rwScegliCorsa(d.corse, rewind.t);
+    if (nuova && nuova.trip !== d.trip) { rwCaricaCorsaBarca(d, nuova); return; }
+    rwRenderBarca();
+}
+
 async function rwApriBarca(id) {
     const b = rewind.boats.get(id);
-    const date = rewind.date, t = rewind.t;
     activeSelection = { type: 'rewind', id };
     const linea = b ? b.line : '-';
     // Nome dell'unità: dallo storico del server, altrimenti dall'elenco live (la flotta è la stessa)
     const nomeUnita = (b && b.label) || (globalBoats.find(x => x.id === id) || {}).label || null;
-    const titolo = nomeUnita || `Linea ${linea}`;
-    const sottotitolo = (l) => `${nomeUnita ? `Linea ${l} · ` : ''}Rewind alle ${rwOra(t, true)}`;
-    const sub = sottotitolo(linea);
-    const opts = { badge: bvDotLinea(linea), sub };
-    openBateoLiveDrawer(titolo, '<p class="bv-empty">Caricamento…</p>', opts);
-    const ancora = () => activeSelection && activeSelection.type === 'rewind' && activeSelection.id === id && rewind.attivo;
+    const d = rewindBarca = { id, date: rewind.date, linea, nomeUnita, corse: [], trip: null, det: null, firma: '', subTxt: '', caricando: true, errore: false };
+    const i0 = rwBarcaIntestazione(d);
+    openBateoLiveDrawer(i0.titolo, '<p class="bv-empty">Caricamento…</p>', { badge: i0.badge, sub: i0.sub });
     try {
-        const r1 = await fetch(`${API_URL}/api/history/${date}/trips?boat=${encodeURIComponent(id)}`);
+        const r1 = await fetch(`${API_URL}/api/history/${d.date}/trips?boat=${encodeURIComponent(id)}`);
         if (!r1.ok) throw new Error('HTTP ' + r1.status);
-        const corse = await r1.json();
-        if (!ancora()) return;
-        let corsa = corse.find(c => c.first - 600 <= t && t <= c.last + 600);
-        if (!corsa) corsa = [...corse].reverse().find(c => c.first <= t);
-        if (!corsa) { openBateoLiveDrawer(titolo, '<p class="bv-empty">Nessuna corsa registrata per questa unità in questo momento.</p>', opts); return; }
-        const r2 = await fetch(`${API_URL}/api/history/${date}/trip/${encodeURIComponent(corsa.trip)}`);
-        if (!r2.ok) throw new Error('HTTP ' + r2.status);
-        const det = await r2.json();
-        if (!ancora()) return;
-
-        const riepilogo = det.headsign ? bvRiepilogo('Destinazione', det.headsign) : '';
-        let html = `<div class="bv-timeline-title">Passaggi registrati</div><div class="bv-tl">`;
-        let primo = true;
-        det.stops.forEach(s => {
-            const dep = s.departure, arr = s.arrival;
-            const passata = dep !== null && dep <= t;
-            const inSosta = !passata && arr <= t;
-            const stato = passata ? 'PASSED' : (inSosta ? 'CURRENT' : 'FUTURE');
-            const extra = (!passata && primo && !inSosta) ? ' prossima' : '';
-            if (!passata) primo = false;
-            const orari = bvRigaOrario('Programmato', `<b class="bv-st-main">${rwOra(s.scheduled)}</b>`)
-                + bvRigaOrario('Arrivo', `<b class="bv-st-main">${rwOra(arr)}</b>`)
-                + (dep !== null ? bvRigaOrario('Partenza', `<b class="bv-st-main">${rwOra(dep)}</b>`) : '');
-            html += bvRigaFermata(stato, extra, s.stopName || s.stopId, orari, getDelayBadge(s.delay));
-        });
-        html += `</div>`;
-        const lineaFinale = det.line || linea;
-        const nomeFinale = nomeUnita || det.boatLabel || null;
-        const titoloFinale = nomeFinale || `Linea ${lineaFinale}`;
-        const subFinale = `${nomeFinale ? `Linea ${lineaFinale} · ` : ''}Rewind alle ${rwOra(t, true)}`;
-        openBateoLiveDrawer(titoloFinale, html, { badge: bvDotLinea(lineaFinale), sub: subFinale, pinned: riepilogo, focusKey: `rw-${id}-${corsa.trip}` });
+        d.corse = await r1.json();
+        if (!rwBarcaAncora(d)) return;
+        const corsa = rwScegliCorsa(d.corse, rewind.t);
+        if (!corsa) {
+            // nessuna corsa adesso: se il tempo scorre fino a una corsa, il pannello si riempie da solo
+            d.caricando = false;
+            const i = rwBarcaIntestazione(d);
+            openBateoLiveDrawer(i.titolo, '<p class="bv-empty">Nessuna corsa registrata per questa unità in questo momento.</p>', { badge: i.badge, sub: i.sub });
+            return;
+        }
+        await rwCaricaCorsaBarca(d, corsa);
     } catch (e) {
         console.error('Rewind: dettaglio battello', e);
-        if (ancora()) openBateoLiveDrawer(titolo, '<p class="bv-empty err">Impossibile caricare il dettaglio.</p>', opts);
+        d.caricando = false; d.errore = true;
+        if (rwBarcaAncora(d)) {
+            const i = rwBarcaIntestazione(d);
+            openBateoLiveDrawer(i.titolo, '<p class="bv-empty err">Impossibile caricare il dettaglio.</p>', { badge: i.badge, sub: i.sub });
+        }
     }
 }
 
