@@ -3,7 +3,7 @@
 // Per pubblicare un aggiornamento cambia SOLO CACHE_VERSION qui sotto (es. 'v2' -> 'v3'):
 // il telefono vede il nuovo sw.js, butta la cache vecchia e ricarica l'app da solo.
 // ==========================================
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 
 const APP_CACHE = `bateolive-app-${CACHE_VERSION}`;   // file dell'app
 const LIB_CACHE = `bateolive-lib-${CACHE_VERSION}`;   // librerie esterne (Leaflet, Font Awesome, Firebase, font)
