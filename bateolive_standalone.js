@@ -396,6 +396,13 @@ export function initUIBateoLive() {
         .bv-dep-msg { margin-left: auto; font-size: 11px; font-weight: 600; }
         .bv-dep-time { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-variant-numeric: tabular-nums; }
         .bv-dep-time .bv-st-main { font-size: 16px; }
+        .bv-dep-live { flex: none; display: inline-flex; align-items: center; gap: 5px; margin-left: auto; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--bv-ok-t); }
+        .bv-dep-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--bv-ok); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.55); animation: bv-live-pulse 1.5s infinite; }
+        @keyframes bv-live-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.55); }
+            70% { box-shadow: 0 0 0 6px rgba(40, 167, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+        }
 
         /* ---------- Finestre (ricerca, filtri, unità) ---------- */
         .bv-modal-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); opacity: 0; transition: opacity 0.2s ease; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); box-sizing: border-box; }
@@ -505,6 +512,7 @@ export function initUIBateoLive() {
         @media (prefers-reduced-motion: reduce) {
             #bv-drawer, #bv-drawer.open { transition: none; }
             .bv-st.corrente .bv-st-node { animation: none; }
+            .bv-dep-live-dot { animation: none; }
             .bv-fab-container .bv-fab, .bv-fab-container.chiuso .bv-fab, .bv-fab-menu i, .bv-tiles-osm { transition: none; }
             .bv-fab-tema i.swap { animation: none; }
         }
@@ -1576,6 +1584,12 @@ function eseguiBateoLiveSearch() {
     }, 2000);
 }
 
+// true se la corsa è accoppiata a un'unità live che locateBateoLiveBoat() può mostrare
+function bvCorsaConUnita(staticTripId, liveBoatId) {
+    if (liveBoatId && globalBoats.some(b => b.id === liveBoatId)) return true;
+    return globalBoats.some(b => b.tripId === staticTripId);
+}
+
 function locateBateoLiveBoat(staticTripId, liveBoatId) {
     let boat = null;
     if (liveBoatId) {
@@ -1764,6 +1778,7 @@ async function renderStopDrawer(stop) {
                         <div class="bv-dep-dest" title="${dest}">${dest}</div>
                         <div class="bv-dep-sub">${stato}<span id="msg-${arr.tripId}" class="bv-dep-msg"></span></div>
                     </div>
+                    ${bvCorsaConUnita(arr.tripId, arr.liveBoatId) ? '<span class="bv-dep-live" title="Unità accoppiata: tocca per vederla in mappa"><span class="bv-dep-live-dot"></span>live</span>' : ''}
                     <div class="bv-dep-time">${timeHtml}${badgeHtml}</div>
                 </div>`;
             });
