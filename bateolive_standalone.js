@@ -914,22 +914,35 @@ export async function avviaMotoreBateoLive(db, auth, userData, isAdmin) {
     await loadMapDependencies();
 
     if (!map) {
-        baseOSM = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'bv-tiles-osm' });
+        // OSM France: stesso stile di OSM ma senza i quadrati sbagliati in laguna.
+        // updateWhenIdle:false carica le tile anche mentre scorri (su mobile di default aspetta che ti fermi),
+        // keepBuffer più alto tiene in memoria più tile attorno alla vista
+        baseOSM = L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
+            maxZoom: 19, subdomains: 'abc', className: 'bv-tiles-osm',
+            updateWhenIdle: false, updateInterval: 100, keepBuffer: 4
+        });
+
+        // Fallback: se OSM France viene bloccato o smette di rispondere, la mappa passa
+        // alle tile OSM standard (quelle usate finora) senza intervento dell'utente.
+        const OSM_URL_FALLBACK = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+        let osmInFallback = false, osmErroriDiFila = 0;
+        baseOSM.on('tileload', () => { osmErroriDiFila = 0; });
+        baseOSM.on('tileerror', (e) => {
+            if (!navigator.onLine) return;                       // offline: inutile cambiare sorgente
+            const t = e.tile, c = e.coords;
+            // la tile fallita viene subito richiesta al fallback (una sola volta)
+            if (!t._bvFallback && !/tile\.openstreetmap\.org/.test(t.src)) {
+                t._bvFallback = true;
+                t.src = OSM_URL_FALLBACK.replace('{z}', c.z).replace('{x}', c.x).replace('{y}', c.y);
+            }
+            // dopo 4 errori consecutivi tutte le tile nuove vanno direttamente al fallback
+            if (!osmInFallback && ++osmErroriDiFila >= 4) {
+                osmInFallback = true;
+                baseOSM.setUrl(OSM_URL_FALLBACK, true);
+            }
+        });
         baseSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
         nauticLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 18 });
-
-        // Riprova le tile che non si caricano (errore o rifiuto temporaneo del server):
-        // evita i quadrati bianchi (scuri nel tema scuro) che restavano a caso sulla mappa
-        [baseOSM, baseSat, nauticLayer].forEach((layer) => {
-            layer.on('tileerror', (e) => {
-                const t = e.tile;
-                const n = t._bvRetry || 0;
-                if (n >= 4 || !t.src) return;
-                t._bvRetry = n + 1;
-                const src = t.src;
-                setTimeout(() => { if (t.parentNode) t.src = src; }, 700 * (n + 1) + Math.random() * 500);
-            });
-        });
 
         map = L.map('bv-map', { 
             attributionControl: false, 
