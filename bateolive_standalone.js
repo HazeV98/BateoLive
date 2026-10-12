@@ -918,6 +918,19 @@ export async function avviaMotoreBateoLive(db, auth, userData, isAdmin) {
         baseSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
         nauticLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 18 });
 
+        // Riprova le tile che non si caricano (errore o rifiuto temporaneo del server):
+        // evita i quadrati bianchi (scuri nel tema scuro) che restavano a caso sulla mappa
+        [baseOSM, baseSat, nauticLayer].forEach((layer) => {
+            layer.on('tileerror', (e) => {
+                const t = e.tile;
+                const n = t._bvRetry || 0;
+                if (n >= 4 || !t.src) return;
+                t._bvRetry = n + 1;
+                const src = t.src;
+                setTimeout(() => { if (t.parentNode) t.src = src; }, 700 * (n + 1) + Math.random() * 500);
+            });
+        });
+
         map = L.map('bv-map', { 
             attributionControl: false, 
             zoomControl: false,
