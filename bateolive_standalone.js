@@ -240,7 +240,13 @@ export function initUIBateoLive() {
         .bv-fab-container:not(.chiuso) .bv-fab:hover { transform: scale(1.05); }
         .bv-fab-menu { position: absolute; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); left: 20px; z-index: 1000; font-size: 18px; }
         .bv-fab-menu i { transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
-        .bv-fab-menu.active i { transform: rotate(135deg); }
+        .bv-fab-menu.active i { transform: rotate(180deg); }
+        /* ---------- Tasti zoom (in basso a destra, sopra l'HUD velocità se visibile) ---------- */
+        .bv-zoom { position: absolute; right: 20px; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
+        .bv-zoom .bv-fab { font-size: 18px; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+        .bv-zoom .bv-fab.disabled { opacity: 0.35; pointer-events: none; }
+        #modal-bateolive-main.hud-box .bv-zoom { bottom: calc(30px + env(safe-area-inset-bottom, 0px) + var(--bv-hud-box-h, 0px) + 12px); }
+        #modal-bateolive-main.hud-nav .bv-zoom { bottom: calc(var(--bv-hud-h, 0px) + 14px); }
 
         .bv-error-banner { position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%) translateY(-20px); z-index: 1500; background: var(--bv-danger); color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 13px; font-weight: 600; box-shadow: var(--bv-shadow); display: flex; align-items: center; gap: 8px; opacity: 0; pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease; max-width: 85%; text-align: center; }
         .bv-error-banner.active { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -459,6 +465,7 @@ export function initUIBateoLive() {
         /* ---------- Rewind ---------- */
         #modal-bateolive-main.rewind-on .bv-fab-container,
         #modal-bateolive-main.rewind-on .bv-fab-menu,
+        #modal-bateolive-main.rewind-on .bv-zoom,
         #modal-bateolive-main.rewind-on .bv-hud-compass,
         #modal-bateolive-main.rewind-on .bv-hud-speed,
         #modal-bateolive-main.rewind-on .bv-hud-status,
@@ -506,6 +513,7 @@ export function initUIBateoLive() {
         @media (max-width: 599px) {
             #bv-drawer { top: auto; left: 10px; right: 10px; width: auto; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); max-height: 60%; transform: translateY(24px); }
             #bv-drawer.open { transform: none; }
+            #modal-bateolive-main:has(#bv-drawer.open) .bv-zoom { opacity: 0; pointer-events: none; }
             #modal-bateolive-main.rewind-on #bv-drawer { top: auto; bottom: 190px; max-height: calc(100% - 78px - 190px - env(safe-area-inset-top, 0px)); }
         }
 
@@ -595,7 +603,13 @@ export function initUIBateoLive() {
 
         <!-- Apre/chiude la colonna dei tasti (chiusa di base) -->
         <div id="bv-fab-menu" class="bv-fab bv-fab-menu" onclick="toggleBvMenu()" role="button" aria-expanded="false" aria-label="Mostra i tasti" title="Mostra i tasti">
-            <i class="fa-solid fa-plus"></i>
+            <i class="fa-solid fa-chevron-up"></i>
+        </div>
+
+        <!-- Zoom mappa: passo fine, tarato per viste da ~250 a ~1000 m davanti -->
+        <div class="bv-zoom">
+            <div id="bv-zoom-in" class="bv-fab" onclick="zoomBvMappa(1)" role="button" aria-label="Avvicina la mappa" title="Zoom +"><i class="fa-solid fa-plus"></i></div>
+            <div id="bv-zoom-out" class="bv-fab" onclick="zoomBvMappa(-1)" role="button" aria-label="Allontana la mappa" title="Zoom -"><i class="fa-solid fa-minus"></i></div>
         </div>
 
         <div id="bv-drawer">
@@ -729,6 +743,7 @@ export function initUIBateoLive() {
     window.cambiaStileBvMappa = cambiaStileBvMappa;
     window.toggleBvNavigatore = toggleBvNavigatore;
     window.toggleBvMenu = toggleBvMenu;
+    window.zoomBvMappa = zoomBvMappa;
     window.toggleBvTema = toggleBvTema;
     window.apriBateoLiveAuthModal = apriBateoLiveAuthModal;
     window.chiudiBateoLiveAuthModal = chiudiBateoLiveAuthModal;
@@ -947,8 +962,12 @@ export async function avviaMotoreBateoLive(db, auth, userData, isAdmin) {
         map = L.map('bv-map', { 
             attributionControl: false, 
             zoomControl: false,
+            zoomSnap: 0.25,
+            zoomDelta: 0.5,
             layers: [baseOSM, nauticLayer]
         }).setView([45.4371, 12.3326], 13);
+        map.on('zoomend zoomlevelschange', aggiornaBvZoomBtn);
+        aggiornaBvZoomBtn();
 
         // rotta della linea: sopra le tile, sotto marker di unità e fermate, non intercetta i click
         map.createPane('bv-rotta');
@@ -1050,6 +1069,21 @@ function toggleBvMenu(forza = null) {
     btn.title = testo;
     clearTimeout(menuFabTimer);
     menuFabTimer = setTimeout(() => visibili.forEach(el => { el.style.transitionDelay = ''; }), 700);
+}
+
+// Zoom a passi di mezzo livello (~x1.41): da 250 a 1000 m davanti sono 4 tocchi, abbastanza fine per rifinire la vista
+const ZOOM_PASSO = 0.5;
+function zoomBvMappa(verso) {
+    if (!map) return;
+    const z = map.getZoom() + verso * ZOOM_PASSO;
+    map.setZoom(Math.min(map.getMaxZoom(), Math.max(map.getMinZoom(), z)));
+}
+
+function aggiornaBvZoomBtn() {
+    if (!map) return;
+    const zin = document.getElementById('bv-zoom-in'), zout = document.getElementById('bv-zoom-out');
+    if (zin) zin.classList.toggle('disabled', map.getZoom() >= map.getMaxZoom() - 0.01);
+    if (zout) zout.classList.toggle('disabled', map.getZoom() <= map.getMinZoom() + 0.01);
 }
 
 function toggleBvCenterMap(forceState = null) {
@@ -2798,6 +2832,9 @@ function aggiornaSpazioHud() {
     const pieno = h > 0 && hud.classList.contains('nav-on');
     root.classList.toggle('hud-nav', pieno);
     root.style.setProperty('--bv-hud-h', pieno ? h + 'px' : '0px');
+    const riquadro = h > 0 && !pieno;
+    root.classList.toggle('hud-box', riquadro);
+    root.style.setProperty('--bv-hud-box-h', riquadro ? h + 'px' : '0px');
 }
 
 function avviaOrologioHud() {
