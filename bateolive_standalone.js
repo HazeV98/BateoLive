@@ -20,6 +20,9 @@ let currentFilterLines = [];
 let fetchInterval = null;
 let mapDepsLoaded = false;
 let activeSelection = null;
+// Telecamere in diretta (elenco dal server, solo visione)
+let webcams = [];
+const webcamMarkers = {};
 // Nomi unità (normalizzati) inseriti manualmente da altri utenti: le unità ACTV corrispondenti vengono nascoste
 let hiddenActvUnitNames = new Set();
 
@@ -213,6 +216,12 @@ export function initUIBateoLive() {
         /* Marker */
         .bv-boat-icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; box-shadow: 0 2px 8px rgba(0,0,0,0.45); cursor: pointer; transform: rotate(var(--marker-rotation, 0deg)); transition: transform 0.2s linear, scale 0.2s ease; }
         .bv-boat-icon:hover { scale: 1.15; }
+        /* Telecamere in diretta (YouTube) */
+        .bv-cam-icon { width: 30px; height: 30px; box-sizing: border-box; border-radius: 50%; background: #b91c1c; color: #fff; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; font-size: 13px; transform: rotate(var(--marker-rotation, 0deg)); }
+        .bv-cam-badge { width: 26px; height: 26px; border-radius: 50%; background: #b91c1c; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+        .bv-cam-player { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; overflow: hidden; }
+        .bv-cam-player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+        .bv-cam-link { display: block; margin-top: 12px; text-align: center; font-size: 13px; font-weight: 600; color: var(--bv-primary); text-decoration: none; }
         .bv-fab-s { font-weight: 800; font-size: 19px; line-height: 1; font-family: inherit; }
         /* Unità simulata dall'orario (non rilevata dal GPS): contorno blu e badge S */
         .bv-boat-sim { position: relative; border: 2.5px solid #2f81f7; box-shadow: 0 0 0 2px rgba(47, 129, 247, 0.35), 0 2px 8px rgba(0,0,0,0.45); }
@@ -809,6 +818,7 @@ export async function avviaMotoreBateoLive() {
         });
 
         loadStops();
+        caricaWebcam();
         fetchAndUpdateBoats();
         fetchInterval = setInterval(() => {
             fetchAndUpdateBoats();
@@ -816,6 +826,7 @@ export async function avviaMotoreBateoLive() {
         }, 1500);
     } else {
         setTimeout(() => map.invalidateSize(), 100);
+        caricaWebcam();
         if (!fetchInterval) {
             fetchInterval = setInterval(() => {
                 fetchAndUpdateBoats();
@@ -1300,7 +1311,12 @@ function chiudiBateoLive() {
 let drawerFocusKey = null;
 
 function closeBateoLiveDrawer() {
+    const eraWebcam = activeSelection && activeSelection.type === 'webcam';
     activeSelection = null;
+    if (eraWebcam) { // togliere l'iframe ferma il video (altrimenti l'audio continua a finestra chiusa)
+        const c = document.getElementById('bv-drawer-content');
+        if (c) c.innerHTML = '';
+    }
     drawerFocusKey = null;
     const drawer = document.getElementById('bv-drawer');
     if (drawer) drawer.classList.remove('open');
@@ -1769,6 +1785,63 @@ function toggleBvSimulate() {
         });
     }
     fetchAndUpdateBoats();
+}
+
+// ==========================================
+// TELECAMERE IN DIRETTA (YouTube) - sola visione
+// Segnalini sulla mappa che aprono la diretta. L'elenco sta sul server (data/webcam.json) e si modifica
+// solo dalla versione completa di BateoLive.
+// ==========================================
+const escWc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function iconaWebcam() {
+    return L.divIcon({ html: '<div class="bv-cam-icon"><i class="fa-solid fa-video"></i></div>', className: '', iconSize: [30, 30], iconAnchor: [15, 15] });
+}
+
+function urlEmbedWebcam(w) {
+    const base = 'https://www.youtube-nocookie.com/embed/';
+    const p = 'autoplay=1&mute=1&playsinline=1&rel=0';
+    return w.tipo === 'canale'
+        ? `${base}live_stream?channel=${encodeURIComponent(w.ytId)}&${p}`
+        : `${base}${encodeURIComponent(w.ytId)}?${p}`;
+}
+
+function apriPlayerWebcam(w) {
+    activeSelection = { type: 'webcam', id: w.id };
+    const html = `<div class="bv-cam-player"><iframe src="${escWc(urlEmbedWebcam(w))}" title="${escWc(w.nome)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+        <a class="bv-cam-link" href="${escWc(w.url)}" target="_blank" rel="noopener noreferrer">Apri su YouTube</a>`;
+    openBateoLiveDrawer(w.nome, html, { badge: '<span class="bv-cam-badge"><i class="fa-solid fa-video"></i></span>', sub: 'Telecamera in diretta' });
+}
+
+function disegnaWebcam() {
+    if (!map) return;
+    const ids = new Set(webcams.map(w => w.id));
+    Object.keys(webcamMarkers).forEach(id => {
+        if (ids.has(id)) return;
+        map.removeLayer(webcamMarkers[id]);
+        delete webcamMarkers[id];
+    });
+    webcams.forEach(w => {
+        const m = webcamMarkers[w.id];
+        if (m) { m.setLatLng([w.lat, w.lon]); return; }
+        const nuovo = L.marker([w.lat, w.lon], { icon: iconaWebcam(), zIndexOffset: 300, title: w.nome, keyboard: false }).addTo(map);
+        nuovo.on('click', () => {
+            const c = webcams.find(x => x.id === w.id);
+            if (c) apriPlayerWebcam(c);
+        });
+        webcamMarkers[w.id] = nuovo;
+    });
+}
+
+async function caricaWebcam() {
+    try {
+        const r = await fetch(`${API_URL}/api/webcam`);
+        if (!r.ok) return;
+        const lista = await r.json();
+        if (!Array.isArray(lista)) return;
+        webcams = lista;
+        disegnaWebcam();
+    } catch (e) { /* senza rete restano quelle già in mappa */ }
 }
 
 async function fetchAndUpdateBoats() {
