@@ -8,6 +8,8 @@
 
 const API_URL = 'https://api.bateolive.stream';
 let globalBoats = [];
+// Posizioni simulate dall'orario (corse non rilevate dal GPS): disattivate di base, la scelta resta salvata
+let bvMostraSimulate = (() => { try { return localStorage.getItem('bv_mostra_simulate') === '1'; } catch (e) { return false; } })();
 let globalStops = [];
 let map = null;
 let oms = null;
@@ -211,6 +213,11 @@ export function initUIBateoLive() {
         /* Marker */
         .bv-boat-icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; box-shadow: 0 2px 8px rgba(0,0,0,0.45); cursor: pointer; transform: rotate(var(--marker-rotation, 0deg)); transition: transform 0.2s linear, scale 0.2s ease; }
         .bv-boat-icon:hover { scale: 1.15; }
+        .bv-fab-s { font-weight: 800; font-size: 19px; line-height: 1; font-family: inherit; }
+        /* Unità simulata dall'orario (non rilevata dal GPS): contorno blu e badge S */
+        .bv-boat-sim { position: relative; border: 2.5px solid #2f81f7; box-shadow: 0 0 0 2px rgba(47, 129, 247, 0.35), 0 2px 8px rgba(0,0,0,0.45); }
+        .bv-sim-badge { position: absolute; top: -8px; right: -8px; width: 15px; height: 15px; box-sizing: border-box; border-radius: 50%; background: #2f81f7; color: #fff; border: 1.5px solid #fff; font-size: 9px; font-weight: 800; line-height: 1; display: flex; align-items: center; justify-content: center; }
+        .bv-sim-note { margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; font-size: 12px; line-height: 1.4; color: var(--bv-muted); background: color-mix(in srgb, #2f81f7 12%, transparent); border: 1px solid color-mix(in srgb, #2f81f7 35%, transparent); }
 
         .bv-stop-icon-wrap { width: 14px; height: 14px; }
         .bv-stop-icon-inner { background: var(--bv-surface); border: 2.5px solid var(--bv-primary); border-radius: 50%; width: 14px; height: 14px; box-sizing: border-box; box-shadow: 0 1px 5px rgba(0,0,0,0.4); cursor: pointer; transition: scale 0.2s ease; }
@@ -513,6 +520,7 @@ export function initUIBateoLive() {
             <div id="bv-fab-unit" class="bv-fab" onclick="apriBateoLiveUnitModal()" title="Nome della tua barca" style="display: none;">
                 <i class="fa-solid fa-ship"></i>
             </div>
+            <div id="bv-fab-sim" class="bv-fab" onclick="toggleBvSimulate()" role="button" aria-pressed="false" title="Mostra le posizioni simulate dall'orario" aria-label="Mostra le posizioni simulate dall'orario"><span class="bv-fab-s">S</span></div>
             <div id="bv-fab-rewind" class="bv-fab" onclick="apriRewind()" title="Rewind: rivedi i movimenti passati"><i class="fa-solid fa-clock-rotate-left"></i></div>
             <div class="bv-fab" onclick="apriBateoLiveSearchModal()" title="Cerca mezzo o fermata"><i class="fa-solid fa-magnifying-glass"></i></div>
             <div class="bv-fab" onclick="apriBateoLiveFilterModal()" title="Filtra linee"><i class="fa-solid fa-filter"></i></div>
@@ -643,6 +651,8 @@ export function initUIBateoLive() {
     window.toggleBvMapRotation = toggleBvMapRotation;
     window.cambiaStileBvMappa = cambiaStileBvMappa;
     window.toggleBvMenu = toggleBvMenu;
+    window.toggleBvSimulate = toggleBvSimulate;
+    aggiornaFabSimulate();
     window.zoomBvMappa = zoomBvMappa;
     window.toggleBvTema = toggleBvTema;
     window.apriRewind = apriRewind;
@@ -661,7 +671,7 @@ export function initUIBateoLive() {
         }
 
         const mStops = globalStops.filter(s => s.name.toLowerCase().includes(q));
-        const mBoats = globalBoats.filter(b => b.line.toLowerCase() === q || b.label.toLowerCase().includes(q));
+        const mBoats = globalBoats.filter(b => b.line.toLowerCase() === q || (!b.simulated && b.label.toLowerCase().includes(q)));
 
         let html = '';
 
@@ -1435,30 +1445,37 @@ function eseguiBateoLiveSearch() {
 
 // true se la corsa è accoppiata a un'unità live che locateBateoLiveBoat() può mostrare
 function bvCorsaConUnita(staticTripId, liveBoatId) {
-    if (liveBoatId && globalBoats.some(b => b.id === liveBoatId)) return true;
-    return globalBoats.some(b => b.tripId === staticTripId);
+    if (liveBoatId && globalBoats.some(b => !b.simulated && b.id === liveBoatId)) return true;
+    return globalBoats.some(b => !b.simulated && b.tripId === staticTripId);
+}
+
+// Corse della finestra fermata aperta: servono per aprire il percorso di una corsa non rilevata dal GPS
+let bvCorseFermata = {};
+
+function bvUnitaDaOrario(staticTripId) {
+    const arr = bvCorseFermata[staticTripId] || {};
+    return { id: 'sim-' + staticTripId, label: 'Corsa da orario', line: arr.routeId || '-', tripId: staticTripId, simulated: true, destination: arr.destination || '' };
 }
 
 function locateBateoLiveBoat(staticTripId, liveBoatId) {
     let boat = null;
     if (liveBoatId) {
-        boat = globalBoats.find(b => b.id === liveBoatId);
+        boat = globalBoats.find(b => !b.simulated && b.id === liveBoatId);
     }
     if (!boat) {
-        boat = globalBoats.find(b => b.tripId === staticTripId);
+        boat = globalBoats.find(b => !b.simulated && b.tripId === staticTripId);
     }
 
     if (boat) {
         map.setView([boat.lat, boat.lon], 16);
         renderBoatDrawer(boat);
-    } else {
-        const msgDiv = document.getElementById('msg-' + staticTripId);
-        if (msgDiv) {
-            msgDiv.innerHTML = "Posizione non disponibile";
-            msgDiv.style.color = "var(--bv-bad-t)";
-            setTimeout(() => { msgDiv.innerHTML = ""; }, 3000);
-        }
+        return;
     }
+
+    // Corsa non rilevata dal GPS: si apre il percorso con tutte le fermate e gli orari programmati
+    const sim = globalBoats.find(b => b.simulated && b.tripId === staticTripId);
+    if (sim) map.setView([sim.lat, sim.lon], 16);
+    renderBoatDrawer(sim || bvUnitaDaOrario(staticTripId));
 }
 
 function showBateoLiveError(show, message) {
@@ -1475,7 +1492,8 @@ function formatTime(unixTimestamp) {
 }
 
 function getDelayBadge(delaySec) {
-    if (delaySec === 0 || delaySec === null || delaySec === undefined) return `<span class="bv-pill bv-pill-ok">In orario</span>`;
+    if (delaySec === null || delaySec === undefined) return ''; // corsa non rilevata: nessun ritardo noto, niente "In orario"
+    if (delaySec === 0) return `<span class="bv-pill bv-pill-ok">In orario</span>`;
     const min = Math.round(delaySec / 60);
     if (min >= 1) return `<span class="bv-pill bv-pill-bad" title="In ritardo di ${min} min">+${min}'</span>`;
     if (min <= -1) return `<span class="bv-pill bv-pill-warn" title="In anticipo di ${-min} min">${min}'</span>`;
@@ -1519,7 +1537,7 @@ async function renderBoatDrawer(boat) {
     activeSelection = { type: 'boat', data: boat };
     const opts = {
         badge: bvDotLinea(boat.line),
-        sub: boat.line && boat.line !== '-' ? `Linea ${boat.line}` : '',
+        sub: [boat.line && boat.line !== '-' ? `Linea ${boat.line}` : '', boat.simulated && boat.lat ? 'posizione stimata' : ''].filter(Boolean).join(' · '),
         focusKey: `boat-${boat.id}`
     };
 
@@ -1553,7 +1571,11 @@ async function renderBoatDrawer(boat) {
             riepilogo = bvRiepilogo('Prossima fermata', prox.stopName, `<div class="bv-sum-time">${ora}</div>${getDelayBadge(prox.delay)}`);
         }
 
-        let html = `<div class="bv-timeline-title">Percorso corsa attuale</div><div class="bv-tl">`;
+        // corsa non rilevata dal GPS: l'avviso resta fissato in alto, sopra il riepilogo della prossima fermata
+        const simNote = boat.simulated
+            ? `<div class="bv-sim-note">${boat.lat ? 'Corsa non rilevata dal GPS: <b>posizione stimata</b> in base all\'orario programmato, il ritardo non è noto.' : 'Corsa non rilevata dal GPS: orari programmati, il ritardo non è noto.'}</div>`
+            : '';
+        let html = `<div class="bv-timeline-title">${boat.simulated ? 'Percorso corsa · orari programmati' : 'Percorso corsa attuale'}</div><div class="bv-tl">`;
         stopTimes.forEach((st, i) => {
             const isOffSchedule = Math.abs(Math.round(st.delay / 60)) >= 1;
 
@@ -1581,7 +1603,7 @@ async function renderBoatDrawer(boat) {
             html += bvRigaFermata(st.status, i === idxProx ? ' prossima' : '', st.stopName, orari, getDelayBadge(st.delay));
         });
         html += `</div>`;
-        openBateoLiveDrawer(boat.label, html, { ...opts, pinned: riepilogo });
+        openBateoLiveDrawer(boat.label, html, { ...opts, pinned: simNote + riepilogo });
     } catch (e) { console.error(e); }
 }
 
@@ -1595,6 +1617,8 @@ async function renderStopDrawer(stop) {
 
         if (!activeSelection || activeSelection.type !== 'stop' || activeSelection.data.id !== stop.id) return;
 
+        bvCorseFermata = {};
+        arrivals.forEach(a => { bvCorseFermata[a.tripId] = a; });
         let html = `<div class="bv-timeline-title">Partenze da un'ora fa alle prossime 3 ore</div>`;
         if (arrivals.length === 0) {
             html += `<p class="bv-empty">Nessuna partenza in programma.</p>`;
@@ -1692,7 +1716,9 @@ function renderOrHideBoatMarker(boat) {
     }
 
     const c = getLineColors(boat.line.toUpperCase());
-    const iconHtml = `<div class="bv-boat-icon" style="background-color: ${c.bg}; color: ${c.text}; border: 2.5px solid ${c.border}; width: 26px; height: 26px; box-sizing: border-box;">${boat.line}</div>`;
+    const iconHtml = boat.simulated
+        ? `<div class="bv-boat-icon bv-boat-sim" style="background-color: ${c.bg}; color: ${c.text}; width: 26px; height: 26px; box-sizing: border-box;">${boat.line}<span class="bv-sim-badge">S</span></div>`
+        : `<div class="bv-boat-icon" style="background-color: ${c.bg}; color: ${c.text}; border: 2.5px solid ${c.border}; width: 26px; height: 26px; box-sizing: border-box;">${boat.line}</div>`;
     const customBoatIcon = L.divIcon({ html: iconHtml, className: '', iconSize: [26, 26], iconAnchor: [13, 13] });
 
     if (boatMarkers[boat.id]) {
@@ -1700,7 +1726,7 @@ function renderOrHideBoatMarker(boat) {
         boatMarkers[boat.id].setIcon(customBoatIcon);
         boatMarkers[boat.id].off('click').on('click', () => renderBoatDrawer(boat));
     } else {
-        const marker = L.marker([boat.lat, boat.lon], { icon: customBoatIcon, zIndexOffset: 1000 }).addTo(map);
+        const marker = L.marker([boat.lat, boat.lon], { icon: customBoatIcon, zIndexOffset: boat.simulated ? 500 : 1000 }).addTo(map);
         marker.on('click', () => renderBoatDrawer(boat));
         oms.addMarker(marker);
         boatMarkers[boat.id] = marker;
@@ -1718,15 +1744,51 @@ function aggiornaVisibilitaBarcheActv() {
     globalBoats.forEach(boat => renderOrHideBoatMarker(boat));
 }
 
+function aggiornaFabSimulate() {
+    const fab = document.getElementById('bv-fab-sim');
+    if (!fab) return;
+    fab.classList.toggle('active', bvMostraSimulate);
+    fab.setAttribute('aria-pressed', bvMostraSimulate ? 'true' : 'false');
+    const t = bvMostraSimulate ? 'Nascondi le posizioni simulate' : "Mostra le posizioni simulate dall'orario";
+    fab.title = t;
+    fab.setAttribute('aria-label', t);
+}
+
+function toggleBvSimulate() {
+    bvMostraSimulate = !bvMostraSimulate;
+    try { localStorage.setItem('bv_mostra_simulate', bvMostraSimulate ? '1' : '0'); } catch (e) {}
+    aggiornaFabSimulate();
+    if (!bvMostraSimulate) {
+        // spegnendo, le unità simulate spariscono subito senza aspettare il prossimo aggiornamento
+        globalBoats = globalBoats.filter(b => !b.simulated);
+        Object.keys(boatMarkers).forEach(id => {
+            if (!id.startsWith('sim-')) return;
+            oms.removeMarker(boatMarkers[id]);
+            map.removeLayer(boatMarkers[id]);
+            delete boatMarkers[id];
+        });
+    }
+    fetchAndUpdateBoats();
+}
+
 async function fetchAndUpdateBoats() {
     if (!map || rewind.attivo) return;
     try {
-        const response = await fetch(`${API_URL}/api/vaporetti/live`);
+        const response = await fetch(`${API_URL}/api/vaporetti/live${bvMostraSimulate ? '?sim=1' : ''}`);
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const boats = await response.json();
         if (rewind.attivo) return;
         globalBoats = boats;
         showBateoLiveError(false);
+
+        // le unità sparite dal feed (o corse simulate finite) non devono restare ferme in mappa
+        const idsAttuali = new Set(boats.map(b => b.id));
+        Object.keys(boatMarkers).forEach(id => {
+            if (idsAttuali.has(id)) return;
+            oms.removeMarker(boatMarkers[id]);
+            map.removeLayer(boatMarkers[id]);
+            delete boatMarkers[id];
+        });
 
         boats.forEach(boat => renderOrHideBoatMarker(boat));
 
