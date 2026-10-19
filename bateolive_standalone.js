@@ -219,7 +219,7 @@ export function initUIBateoLive() {
         .bv-boat-icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; box-shadow: 0 2px 8px rgba(0,0,0,0.45); cursor: pointer; transform: rotate(var(--marker-rotation, 0deg)); transition: transform 0.2s linear, scale 0.2s ease; }
         .bv-boat-icon:hover { scale: 1.15; }
         /* Telecamere in diretta (YouTube) */
-        .bv-cam-icon { width: 30px; height: 30px; box-sizing: border-box; border-radius: 50%; background: #b91c1c; color: #fff; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; font-size: 13px; transform: rotate(var(--marker-rotation, 0deg)); }
+        .bv-cam-icon { width: 21px; height: 21px; box-sizing: border-box; border-radius: 50%; background: #b91c1c; color: #fff; border: 1.5px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; font-size: 9px; transform: rotate(var(--marker-rotation, 0deg)); }
         .bv-cam-badge { width: 26px; height: 26px; border-radius: 50%; background: #b91c1c; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
         .bv-cam-player { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; overflow: hidden; }
         .bv-cam-player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
@@ -250,6 +250,16 @@ export function initUIBateoLive() {
         .bv-fab-container .bv-fab { pointer-events: auto; opacity: 1; transform: none; transition: transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.15), opacity 0.22s ease, background 0.2s, color 0.2s; }
         .bv-fab-container.chiuso .bv-fab { opacity: 0; transform: translateY(26px) scale(0.5); pointer-events: none; transition: transform 0.22s ease-in, opacity 0.18s ease, background 0.2s, color 0.2s; }
         .bv-fab-container:not(.chiuso) .bv-fab:hover { transform: scale(1.05); }
+        /* Etichette accanto ai tasti */
+        .bv-fab-container .bv-fab { position: relative; }
+        .bv-fab-lbl { display: none; position: absolute; top: 50%; left: calc(100% + 8px); transform: translateY(-50%); padding: 4px 10px; border-radius: 999px; background: var(--bv-surface); border: 1px solid var(--bv-border); box-shadow: var(--bv-shadow); color: var(--bv-text); font-size: 12px; font-weight: 700; line-height: 1.25; font-family: inherit; white-space: nowrap; max-width: min(170px, calc(50vw - 85px)); overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+        .bv-fab-container .bv-fab-lbl { display: block; }
+        /* Due lati dello schermo: i tasti non stanno più in una colonna, si alternano a sinistra e a destra, sfalsati in altezza (la posizione la calcola aggiornaFabLayout) */
+        .bv-fab-container.due-colonne { left: 20px; right: 20px; height: 0; display: block; }
+        .bv-fab-container.due-colonne .bv-fab { position: absolute; }
+        .bv-fab-container.due-colonne .bv-fab-sx { left: 0; }
+        .bv-fab-container.due-colonne .bv-fab-dx { right: 0; }
+        .bv-fab-container.due-colonne .bv-fab-dx .bv-fab-lbl { left: auto; right: calc(100% + 8px); }
         .bv-fab-menu { position: absolute; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); left: 20px; z-index: 1000; font-size: 18px; }
         .bv-fab-menu i { transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
         .bv-fab-menu.active i { transform: rotate(180deg); }
@@ -515,26 +525,26 @@ export function initUIBateoLive() {
         <div class="bv-fab-container chiuso">
             <div id="bv-fab-gps" class="bv-fab" onclick="toggleBvGPS()" title="Attiva/Disattiva GPS">
                 <i class="fa-solid fa-satellite-dish"></i>
-            </div>
+            <span class="bv-fab-lbl">GPS</span></div>
             <div id="bv-fab-center" class="bv-fab" onclick="toggleBvCenterMap()" title="Centra sulla posizione" style="display: none;">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M12 2L4 20L12 17L20 20L12 2Z"/></svg>
-            </div>
+            <span class="bv-fab-lbl">Centra</span></div>
             <div id="bv-fab-rotate" class="bv-fab" onclick="toggleBvMapRotation()" title="Rotazione mappa (rotta in alto)" style="display: none;">
                 <i class="fa-regular fa-compass"></i>
-            </div>
+            <span class="bv-fab-lbl">Ruota mappa</span></div>
             <div id="bv-fab-layers" class="bv-fab" onclick="cambiaStileBvMappa()" title="Cambia stile cartografico">
                 <i class="fa-solid fa-layer-group"></i>
-            </div>
+            <span class="bv-fab-lbl">Stile mappa</span></div>
             <div id="bv-fab-tema" class="bv-fab bv-fab-tema" onclick="toggleBvTema()" role="button" title="Passa al tema scuro" aria-label="Passa al tema scuro">
                 <i class="fa-solid fa-moon"></i>
-            </div>
+            <span class="bv-fab-lbl">Tema scuro</span></div>
             <div id="bv-fab-unit" class="bv-fab" onclick="apriBateoLiveUnitModal()" title="Nome della tua barca" style="display: none;">
                 <i class="fa-solid fa-ship"></i>
-            </div>
-            <div id="bv-fab-sim" class="bv-fab" onclick="toggleBvSimulate()" role="button" aria-pressed="false" title="Mostra le posizioni simulate dall'orario" aria-label="Mostra le posizioni simulate dall'orario"><span class="bv-fab-s">S</span></div>
-            <div id="bv-fab-rewind" class="bv-fab" onclick="apriRewind()" title="Rewind: rivedi i movimenti passati"><i class="fa-solid fa-clock-rotate-left"></i></div>
-            <div class="bv-fab" onclick="apriBateoLiveSearchModal()" title="Cerca mezzo o fermata"><i class="fa-solid fa-magnifying-glass"></i></div>
-            <div class="bv-fab" onclick="apriBateoLiveFilterModal()" title="Filtra linee"><i class="fa-solid fa-filter"></i></div>
+            <span class="bv-fab-lbl">Nome barca</span></div>
+            <div id="bv-fab-sim" class="bv-fab" onclick="toggleBvSimulate()" role="button" aria-pressed="false" title="Mostra le posizioni simulate dall'orario" aria-label="Mostra le posizioni simulate dall'orario"><span class="bv-fab-s">S</span><span class="bv-fab-lbl">Simulati</span></div>
+            <div id="bv-fab-rewind" class="bv-fab" onclick="apriRewind()" title="Rewind: rivedi i movimenti passati"><i class="fa-solid fa-clock-rotate-left"></i><span class="bv-fab-lbl">Rewind</span></div>
+            <div class="bv-fab" onclick="apriBateoLiveSearchModal()" title="Cerca mezzo o fermata"><i class="fa-solid fa-magnifying-glass"></i><span class="bv-fab-lbl">Cerca</span></div>
+            <div class="bv-fab" onclick="apriBateoLiveFilterModal()" title="Filtra linee"><i class="fa-solid fa-filter"></i><span class="bv-fab-lbl">Filtra linee</span></div>
         </div>
 
         <!-- Apre/chiude la colonna dei tasti (chiusa di base) -->
@@ -662,6 +672,7 @@ export function initUIBateoLive() {
     window.toggleBvMapRotation = toggleBvMapRotation;
     window.cambiaStileBvMappa = cambiaStileBvMappa;
     window.toggleBvMenu = toggleBvMenu;
+    avviaFabLayout();
     window.toggleBvSimulate = toggleBvSimulate;
     aggiornaFabSimulate();
     window.zoomBvMappa = zoomBvMappa;
@@ -722,6 +733,8 @@ function bvAggiornaIconaTema(scuro, anima) {
     const testo = scuro ? 'Passa al tema chiaro' : 'Passa al tema scuro';
     btn.title = testo;
     btn.setAttribute('aria-label', testo);
+    const lbTema = btn.querySelector('.bv-fab-lbl');
+    if (lbTema) lbTema.textContent = scuro ? 'Tema chiaro' : 'Tema scuro';
     if (anima) { void ico.offsetWidth; ico.classList.add('swap'); }
 }
 
@@ -884,6 +897,72 @@ function cambiaStileBvMappa() {
     }, 2000);
 }
 
+// ---------------------------------------------------------------- etichette e disposizione dei tasti
+// Se i tasti non entrano in una colonna (di solito con il navigatore aperto in basso) si dispongono sui due lati
+// dello schermo, alternati e sfalsati in altezza, così le etichette stanno a destra dei tasti di sinistra e a sinistra
+// di quelli di destra. A destra si sale sopra i tasti zoom.
+let fabLayoutRaf = 0, fabLayoutObs = null, fabLayoutRootObs = null;
+function richiediFabLayout() {
+    if (fabLayoutRaf) return;
+    fabLayoutRaf = requestAnimationFrame(() => { fabLayoutRaf = 0; aggiornaFabLayout(); });
+}
+
+function aggiornaFabLayout() {
+    const root = document.getElementById('modal-bateolive-main');
+    const cont = root && root.querySelector('.bv-fab-container');
+    if (!root || !cont || !root.clientHeight) return;
+    // si riparte dalla colonna singola e si misura se i tasti vanno a capo
+    cont.classList.remove('due-colonne');
+    [...cont.children].forEach(el => { el.classList.remove('bv-fab-sx', 'bv-fab-dx'); el.style.bottom = ''; });
+    const tasti = [...cont.children].filter(el => el.style.display !== 'none');
+    const aCapo = tasti.length > 1 && cont.getBoundingClientRect().width > 60;
+    if (aCapo) {
+        cont.classList.add('due-colonne');
+        const dalBasso = tasti.slice().reverse();
+        const base = cont.getBoundingClientRect().bottom;
+        const zoom = root.querySelector('.bv-zoom');
+        const zr = zoom ? zoom.getBoundingClientRect() : null;
+        const libero = zr && zr.height ? Math.max(0, base - zr.top + 12) : 0; // quanto salire a destra per stare sopra lo zoom
+        const back = root.querySelector('.bv-back-btn, .bv-profile-btn');
+        const limite = Math.max(back ? back.getBoundingClientRect().bottom + 12 : 0, root.getBoundingClientRect().top + 80);
+        const spazio = base - limite;
+        const nS = Math.ceil(dalBasso.length / 2), nD = Math.floor(dalBasso.length / 2);
+        // inizio dei tasti di destra: sfalsato di mezzo passo rispetto a quelli di sinistra
+        const inizioDx = (p) => p / 2 + p * Math.ceil(Math.max(0, libero - p / 2) / p);
+        let passo = 60;
+        for (; passo >= 52; passo -= 2) {
+            const cimaS = 45 + passo * (nS - 1);
+            const cimaD = nD ? inizioDx(passo) + 45 + passo * (nD - 1) : 0;
+            if (Math.max(cimaS, cimaD) <= spazio) break;
+        }
+        if (passo < 52) passo = 52;
+        const dx0 = inizioDx(passo);
+        dalBasso.forEach((el, j) => {
+            const sx = j % 2 === 0, k = Math.floor(j / 2);
+            el.classList.add(sx ? 'bv-fab-sx' : 'bv-fab-dx');
+            el.style.bottom = (sx ? k * passo : dx0 + k * passo) + 'px';
+        });
+    }
+    if (fabLayoutObs) fabLayoutObs.takeRecords(); // le modifiche appena fatte non devono far ripartire il calcolo
+}
+
+function avviaFabLayout() {
+    const root = document.getElementById('modal-bateolive-main');
+    const cont = root && root.querySelector('.bv-fab-container');
+    if (!root || !cont) return;
+    if (fabLayoutObs) fabLayoutObs.disconnect();
+    if (fabLayoutRootObs) fabLayoutRootObs.disconnect();
+    if (typeof MutationObserver === 'function') {
+        fabLayoutObs = new MutationObserver(richiediFabLayout);
+        fabLayoutObs.observe(cont, { attributes: true, attributeFilter: ['style'], subtree: true }); // tasti che compaiono/spariscono
+        fabLayoutRootObs = new MutationObserver(richiediFabLayout);
+        fabLayoutRootObs.observe(root, { attributes: true, attributeFilter: ['class', 'style'] }); // altezza HUD, apertura del modulo
+    }
+    window.removeEventListener('resize', richiediFabLayout);
+    window.addEventListener('resize', richiediFabLayout);
+    richiediFabLayout();
+}
+
 let menuFabAperto = false;
 let menuFabTimer = null;
 function toggleBvMenu(forza = null) {
@@ -905,6 +984,7 @@ function toggleBvMenu(forza = null) {
     btn.title = testo;
     clearTimeout(menuFabTimer);
     menuFabTimer = setTimeout(() => visibili.forEach(el => { el.style.transitionDelay = ''; }), 700);
+    aggiornaFabLayout();
 }
 
 // Zoom a passi di mezzo livello (~x1.41): da 250 a 1000 m davanti sono 4 tocchi, abbastanza fine per rifinire la vista
@@ -1797,7 +1877,7 @@ function toggleBvSimulate() {
 const escWc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function iconaWebcam() {
-    return L.divIcon({ html: '<div class="bv-cam-icon"><i class="fa-solid fa-video"></i></div>', className: '', iconSize: [30, 30], iconAnchor: [15, 15] });
+    return L.divIcon({ html: '<div class="bv-cam-icon"><i class="fa-solid fa-video"></i></div>', className: '', iconSize: [21, 21], iconAnchor: [10.5, 10.5] });
 }
 
 function urlEmbedWebcam(w) {
