@@ -92,6 +92,8 @@ const ACTV_COLORS = {
     '20': { bg: '#cbb3d5', text: '#000000', border: '#cbb3d5' },
     '22': { bg: '#c4d82d', text: '#006600', border: '#006600' },
     'N':  { bg: '#1c355e', text: '#ffffff', border: '#1c355e' },
+    'NMU':  { bg: '#1c355e', text: '#ffffff', border: '#1c355e' },
+    'NLN':  { bg: '#1c355e', text: '#ffffff', border: '#1c355e' },
     'SA': { bg: '#ff7000', text: '#000000', border: '#ff7000' }
  };
 
