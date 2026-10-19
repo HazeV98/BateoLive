@@ -1801,7 +1801,7 @@ function iconaWebcam() {
 }
 
 function urlEmbedWebcam(w) {
-    const base = 'https://www.youtube-nocookie.com/embed/';
+    const base = 'https://www.youtube.com/embed/';
     const p = 'autoplay=1&mute=1&playsinline=1&rel=0';
     return w.tipo === 'canale'
         ? `${base}live_stream?channel=${encodeURIComponent(w.ytId)}&${p}`
