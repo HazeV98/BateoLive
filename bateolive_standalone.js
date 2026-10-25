@@ -6,7 +6,7 @@
 // Grafica: tema chiaro/scuro (segue il sistema, o il tasto sole/luna), tasto + per i pulsanti, pannelli unità/fermate.
 // ==========================================
 
-const API_URL = 'https://api.bateolive.stream';
+const API_URL = 'https://utilitybe.homeserver.foo';
 let globalBoats = [];
 // Posizioni simulate dall'orario (corse non rilevate dal GPS): disattivate di base, la scelta resta salvata
 let bvMostraSimulate = (() => { try { return localStorage.getItem('bv_mostra_simulate') === '1'; } catch (e) { return false; } })();
