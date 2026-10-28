@@ -718,7 +718,7 @@ export function initUIBateoLive() {
 
         mBoats.slice(0, 4).forEach(b => {
             html += `<div class="bv-suggestion-item" onclick="selezionaBateoLiveSuggestion('boat', '${b.id}')">
-                        ${bvDotLinea(b.line)} <span>${bvEsc(b.label)}</span>
+                        ${bvDotLinea(b.line, b)} <span>${bvEsc(b.label)}</span>
                      </div>`;
         });
 
@@ -852,6 +852,8 @@ export async function avviaMotoreBateoLive() {
         });
 
         loadStops();
+        map.on('moveend', pianificaFermateBus);
+        pianificaFermateBus();
         caricaWebcam();
         fetchAndUpdateBoats();
         fetchInterval = setInterval(() => {
@@ -1581,6 +1583,7 @@ function apriBateoLiveFilterModal() {
 function applicaBateoLiveFilter() {
     if (bvFiltroBozza) filtroMezzi = bvFiltroBozza;
     bvFiltroBozza = null;
+    pianificaFermateBus();
 
     chiudiBateoLiveModals({ target: { classList: { contains: () => true } } });
 
@@ -1798,7 +1801,8 @@ async function renderBoatDrawer(boat) {
 async function renderStopDrawer(stop) {
     if (rewind.attivo) return; // in rewind le fermate non mostrano i dati live
     activeSelection = { type: 'stop', data: stop };
-    const opts = { badge: '<span class="bv-dh-ico"><i class="fa-solid fa-anchor"></i></span>', sub: 'Fermata' };
+    const fermataBus = Array.isArray(stop.modi) && !stop.modi.includes('nav');
+    const opts = { badge: `<span class="bv-dh-ico"><i class="fa-solid ${fermataBus ? 'fa-bus' : 'fa-anchor'}"></i></span>`, sub: fermataBus ? 'Fermata bus' : 'Fermata' };
     try {
         const res = await fetch(`${API_URL}/api/stop/${stop.id}`);
         const arrivals = await res.json();
@@ -1834,7 +1838,7 @@ async function renderStopDrawer(stop) {
                 const dest = bvEsc(arr.destination || 'Sconosciuta');
                 html += `
                 <div class="bv-dep${cls}" onclick="locateBateoLiveBoat('${arr.tripId}', '${arr.liveBoatId || ''}')">
-                    ${bvDotLinea(arr.routeId)}
+                    ${bvDotLinea(arr.routeId, { line: arr.routeId, mode: arr.mode })}
                     <div class="bv-dep-txt">
                         <div class="bv-dep-dest" title="${dest}">${dest}</div>
                         <div class="bv-dep-sub">${stato}<span id="msg-${arr.tripId}" class="bv-dep-msg"></span></div>
@@ -1846,6 +1850,61 @@ async function renderStopDrawer(stop) {
         }
         openBateoLiveDrawer(stop.name, html, opts);
     } catch (e) { console.error(e); }
+}
+
+// ---- Fermate bus: mostrate solo con zoom alto e solo quelle nel riquadro visibile (sono oltre 2.200: tutte insieme appesantirebbero la mappa)
+const BV_ZOOM_FERMATE_BUS = 15;
+const BV_MAX_FERMATE_BUS = 800;
+let fermateBusTutte = null;          // elenco completo, scaricato una volta sola al primo zoom utile
+let fermateBusInCaricamento = false;
+let fermateBusLayer = null;
+let fermateBusRenderer = null;
+const fermateBusDisegnate = new Map();   // id -> marker
+let fermateBusTimer = null;
+
+function pianificaFermateBus() {
+    clearTimeout(fermateBusTimer);
+    fermateBusTimer = setTimeout(aggiornaFermateBus, 150);
+}
+
+async function aggiornaFermateBus() {
+    if (!map) return;
+    const visibili = map.getZoom() >= BV_ZOOM_FERMATE_BUS && !filtroMezzi.bus.off;
+    if (!visibili) {
+        if (fermateBusLayer) { fermateBusLayer.clearLayers(); fermateBusDisegnate.clear(); }
+        return;
+    }
+    if (!fermateBusTutte) {
+        if (fermateBusInCaricamento) return;
+        fermateBusInCaricamento = true;
+        try {
+            const res = await fetch(`${API_URL}/api/stops?modo=bus`);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            fermateBusTutte = await res.json();
+        } catch (e) {
+            console.error('Errore caricamento fermate bus:', e);
+            return;
+        } finally { fermateBusInCaricamento = false; }
+    }
+    if (!fermateBusLayer) {
+        fermateBusRenderer = L.canvas({ padding: 0.5 });   // disegnate su canvas, senza un elemento DOM per fermata
+        fermateBusLayer = L.layerGroup().addTo(map);
+    }
+    const area = map.getBounds().pad(0.25);
+    const tieni = map.getBounds().pad(0.6);
+    // fuori dal riquadro (con margine): si tolgono
+    for (const [id, m] of fermateBusDisegnate) {
+        if (!tieni.contains(m.getLatLng())) { fermateBusLayer.removeLayer(m); fermateBusDisegnate.delete(id); }
+    }
+    // dentro il riquadro: si aggiungono
+    for (const stop of fermateBusTutte) {
+        if (fermateBusDisegnate.size >= BV_MAX_FERMATE_BUS) break;
+        if (fermateBusDisegnate.has(stop.id) || !area.contains([stop.lat, stop.lon])) continue;
+        const m = L.circleMarker([stop.lat, stop.lon], { renderer: fermateBusRenderer, radius: 6, weight: 2.5, color: '#E31E24', fillColor: '#ffffff', fillOpacity: 1 });
+        m.on('click', () => renderStopDrawer(stop));
+        m.addTo(fermateBusLayer);
+        fermateBusDisegnate.set(stop.id, m);
+    }
 }
 
 async function loadStops() {
@@ -1910,9 +1969,12 @@ function direzioneMezzo(boat) {
 
 const eMezzoSuGomma = (boat) => !!boat.mode && boat.mode !== 'nav'; // bus e tram: pillola; battelli: goccia
 
-// Colori: i battelli hanno quelli ACTV di sempre; bus e tram usano i colori scritti nel GTFS (le linee hanno gli stessi numeri ma colori diversi)
+// Colori: i battelli hanno quelli ACTV di sempre; bus e tram sono tutti rossi con scritta bianca
 function coloriMezzo(boat) {
-    if (eMezzoSuGomma(boat) && boat.color) return { bg: boat.color, text: boat.textColor || '#ffffff', border: boat.border || '#ffffff' };
+    if (eMezzoSuGomma(boat)) {
+        // tutti i bus con linea: rosso con scritta bianca (le linee bus hanno gli stessi numeri dei battelli ma non ne prendono i colori)
+        return !boat.line || String(boat.line) === '-' ? { bg: '#6b7280', text: '#ffffff', border: '#ffffff' } : { bg: '#E31E24', text: '#ffffff', border: '#ffffff' };
+    }
     return getLineColors(String(boat.line).toUpperCase());
 }
 
