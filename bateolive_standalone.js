@@ -16,7 +16,7 @@ let oms = null;
 let boatMarkers = {};
 let otherUsersMarkers = {};
 let userMarker = null;
-let currentFilterLines = [];
+let filtroMezzi = { nav: { off: false, nascoste: new Set() }, bus: { off: false, nascoste: new Set() } }; // filtro per categoria: interruttore generale + linee nascoste
 let fetchInterval = null;
 let mapDepsLoaded = false;
 let activeSelection = null;
@@ -218,6 +218,15 @@ export function initUIBateoLive() {
         /* Marker */
         .bv-boat-icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; box-shadow: 0 2px 8px rgba(0,0,0,0.45); cursor: pointer; transform: rotate(var(--marker-rotation, 0deg)); transition: transform 0.2s linear, scale 0.2s ease; }
         .bv-boat-icon:hover { scale: 1.15; }
+        /* Mezzi live: goccia (battelli) e pillola (bus). La forma ruota verso la direzione di marcia (--h), il numero di linea resta dritto.
+           Con la mappa ruotata (--marker-rotation) il marker si contro-ruota e la forma compensa, cosi' la direzione resta quella vera. */
+        .bv-veh { position: relative; display: flex; align-items: center; justify-content: center; cursor: pointer; transform: rotate(var(--marker-rotation, 0deg)); transition: scale 0.2s ease; }
+        .bv-veh:hover { scale: 1.15; }
+        .bv-veh-shape { position: absolute; inset: 0; transform: rotate(calc(var(--h, 0deg) - var(--marker-rotation, 0deg))); transition: transform 0.3s linear; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.45)); }
+        .bv-veh-shape svg { display: block; width: 100%; height: 100%; overflow: visible; }
+        .bv-veh-sim .bv-veh-shape { filter: drop-shadow(0 0 3px rgba(47, 129, 247, 0.7)) drop-shadow(0 2px 4px rgba(0,0,0,0.45)); }
+        .bv-veh-txt { position: relative; font-weight: 700; font-size: 11px; line-height: 1; pointer-events: none; }
+        .bv-veh .bv-sim-badge { top: 3px; right: 3px; }
         /* Telecamere in diretta (YouTube) */
         .bv-cam-icon { width: 21px; height: 21px; box-sizing: border-box; border-radius: 50%; background: #b91c1c; color: #fff; border: 1.5px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; font-size: 9px; transform: rotate(var(--marker-rotation, 0deg)); }
         .bv-cam-badge { width: 26px; height: 26px; border-radius: 50%; background: #b91c1c; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
@@ -419,6 +428,16 @@ export function initUIBateoLive() {
         .bv-switch input:checked + .bv-slider { background-color: var(--bv-ok); }
         .bv-switch input:checked + .bv-slider:before { transform: translateX(20px); }
         .bv-switch input:focus-visible + .bv-slider { outline: 2px solid var(--bv-primary); outline-offset: 2px; }
+        /* Filtri: categorie collassabili (Vaporetti / Bus) */
+        .bv-fcat { border: 1px solid var(--bv-border); border-radius: 12px; margin-bottom: 10px; overflow: hidden; flex-shrink: 0; }
+        .bv-fcat-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 12px 4px 2px; }
+        .bv-fcat-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; background: transparent; border: none; color: var(--bv-text); font: inherit; font-weight: 800; font-size: 15px; padding: 10px; text-align: left; cursor: pointer; }
+        .bv-fcat-chev { font-size: 12px; color: var(--bv-muted); transition: transform 0.2s; }
+        .bv-fcat.aperta .bv-fcat-chev { transform: rotate(90deg); }
+        .bv-fcat-n { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--bv-muted); }
+        .bv-fcat-body { display: none; padding: 0 12px 4px; border-top: 1px solid var(--bv-border); }
+        .bv-fcat.aperta .bv-fcat-body { display: block; }
+        .bv-fcat-body .bv-empty { margin: 10px 0; }
 
         #modal-bateolive-main ::-webkit-scrollbar { width: 6px; }
         #modal-bateolive-main ::-webkit-scrollbar-track { background: transparent; }
@@ -1451,31 +1470,108 @@ function apriBateoLiveSearchModal() {
     setTimeout(() => input.focus(), 50);
 }
 
-async function openBateoLiveFilterModalInternal() {
-    document.getElementById('bv-filter-modal').classList.add('active');
-    lockBateoLiveMap();
-    try {
-        const lines = [...new Set(globalBoats.map(b => b.line).filter(l => l !== '-'))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+// ---- Filtri: due categorie (Vaporetti e Bus), chiuse di default, ognuna con l'interruttore generale e le sue linee
+let bvFiltroBozza = null;                      // copia su cui lavora il modale finche' non si preme "Applica filtro"
+let bvFiltroAperte = { nav: false, bus: false };
+const BV_CATEGORIE = [{ id: 'nav', titolo: 'Vaporetti' }, { id: 'bus', titolo: 'Bus' }];
+const categoriaMezzo = (boat) => (eMezzoSuGomma(boat) ? 'bus' : 'nav');
 
-        let html = '';
-        lines.forEach(line => {
-            const isChecked = currentFilterLines.length === 0 || currentFilterLines.includes(line) ? 'checked' : '';
-            const c = getLineColors(line);
+function mezzoVisibileFiltro(boat) {
+    const f = filtroMezzi[categoriaMezzo(boat)];
+    return !f.off && !f.nascoste.has(String(boat.line).toUpperCase());
+}
 
-            html += `
+function bvLineeCategoria(cat) {
+    return [...new Set(globalBoats.filter(b => b.line !== '-' && categoriaMezzo(b) === cat).map(b => String(b.line)))]
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+function bvFiltroHtml() {
+    return BV_CATEGORIE.map(cat => {
+        const linee = bvLineeCategoria(cat.id), f = bvFiltroBozza[cat.id];
+        const accesa = (l) => !f.off && !f.nascoste.has(l.toUpperCase());
+        const visibili = linee.filter(accesa).length;
+        const aperta = bvFiltroAperte[cat.id];
+        const righe = linee.length ? linee.map(l => {
+            const esempio = globalBoats.find(b => String(b.line) === l && categoriaMezzo(b) === cat.id);
+            return `
             <div class="bv-toggle-row">
                 <div class="bv-toggle-info">
-                    <div class="bv-line-dot" style="background-color: ${c.bg}; color: ${c.text}; border-color: ${c.border};">${line}</div>
-                    <span>Linea ${line}</span>
+                    ${bvDotLinea(l, esempio)}
+                    <span>Linea ${bvEsc(l)}</span>
                 </div>
                 <label class="bv-switch">
-                    <input type="checkbox" value="${line}" class="bv-line-filter-cb" ${isChecked}>
+                    <input type="checkbox" value="${bvEsc(l)}" class="bv-line-filter-cb" data-cat="${cat.id}" ${accesa(l) ? 'checked' : ''}>
                     <span class="bv-slider"></span>
                 </label>
             </div>`;
-        });
-        document.getElementById('bv-filter-list').innerHTML = html || '<p class="bv-empty">Nessuna linea attiva trovata.</p>';
-    } catch (e) {}
+        }).join('') : '<p class="bv-empty">Nessuna linea attiva trovata.</p>';
+        return `
+        <div class="bv-fcat${aperta ? ' aperta' : ''}">
+            <div class="bv-fcat-head">
+                <button type="button" class="bv-fcat-btn" data-cat="${cat.id}" aria-expanded="${aperta}">
+                    <i class="fa-solid fa-chevron-right bv-fcat-chev"></i>
+                    <span>${cat.titolo}</span>
+                    <span class="bv-fcat-n">${visibili}/${linee.length}</span>
+                </button>
+                <label class="bv-switch" title="${cat.titolo}: tutte le linee">
+                    <input type="checkbox" class="bv-cat-cb" data-cat="${cat.id}" ${f.off ? '' : 'checked'}>
+                    <span class="bv-slider"></span>
+                </label>
+            </div>
+            <div class="bv-fcat-body">${righe}</div>
+        </div>`;
+    }).join('');
+}
+
+function bvFiltroRender() {
+    const el = document.getElementById('bv-filter-list');
+    if (!el || !bvFiltroBozza) return;
+    const alto = el.scrollTop;
+    el.innerHTML = bvFiltroHtml();
+    el.scrollTop = alto;
+}
+
+function bvFiltroEventi() {
+    const el = document.getElementById('bv-filter-list');
+    if (!el || el._bvFiltro) return;
+    el._bvFiltro = true;
+    el.addEventListener('click', (e) => {
+        const btn = e.target.closest('.bv-fcat-btn');
+        if (!btn) return;
+        bvFiltroAperte[btn.dataset.cat] = !bvFiltroAperte[btn.dataset.cat];
+        bvFiltroRender();
+    });
+    el.addEventListener('change', (e) => {
+        const t = e.target, cat = t.dataset && t.dataset.cat;
+        if (!cat || !bvFiltroBozza) return;
+        const f = bvFiltroBozza[cat];
+        if (t.classList.contains('bv-cat-cb')) {
+            // interruttore generale: acceso = tutte le linee, spento = nessuna
+            f.off = !t.checked;
+            f.nascoste.clear();
+        } else if (t.classList.contains('bv-line-filter-cb')) {
+            const linea = t.value.toUpperCase(), tutte = bvLineeCategoria(cat).map(l => l.toUpperCase());
+            if (f.off) {
+                if (t.checked) { f.off = false; f.nascoste = new Set(tutte.filter(l => l !== linea)); } // categoria spenta: accendendo una linea resta solo quella
+            } else if (t.checked) f.nascoste.delete(linea);
+            else f.nascoste.add(linea);
+            if (!f.off && tutte.length && tutte.every(l => f.nascoste.has(l))) { f.off = true; f.nascoste.clear(); } // tutte le linee spente = categoria spenta
+        }
+        bvFiltroRender();
+    });
+}
+
+async function openBateoLiveFilterModalInternal() {
+    document.getElementById('bv-filter-modal').classList.add('active');
+    lockBateoLiveMap();
+    bvFiltroBozza = {
+        nav: { off: filtroMezzi.nav.off, nascoste: new Set(filtroMezzi.nav.nascoste) },
+        bus: { off: filtroMezzi.bus.off, nascoste: new Set(filtroMezzi.bus.nascoste) }
+    };
+    bvFiltroAperte = { nav: false, bus: false };
+    bvFiltroEventi();
+    bvFiltroRender();
 }
 
 function apriBateoLiveFilterModal() {
@@ -1483,14 +1579,8 @@ function apriBateoLiveFilterModal() {
 }
 
 function applicaBateoLiveFilter() {
-    const checkboxes = document.querySelectorAll('.bv-line-filter-cb');
-    const allChecked = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
-
-    if (allChecked.length === checkboxes.length || allChecked.length === 0) {
-        currentFilterLines = [];
-    } else {
-        currentFilterLines = allChecked;
-    }
+    if (bvFiltroBozza) filtroMezzi = bvFiltroBozza;
+    bvFiltroBozza = null;
 
     chiudiBateoLiveModals({ target: { classList: { contains: () => true } } });
 
@@ -1601,8 +1691,8 @@ function getDelayBadge(delaySec) {
 const bvEsc = (v) => (v == null ? '' : String(v)).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Badge della linea con i colori ACTV (gli stessi di mappa e navigatore)
-function bvDotLinea(line) {
-    const c = getLineColors(String(line).toUpperCase());
+function bvDotLinea(line, mezzo) {
+    const c = mezzo && mezzo.line === line ? coloriMezzo(mezzo) : getLineColors(String(line).toUpperCase());
     return `<span class="bv-line-dot" style="background-color:${c.bg};color:${c.text};border-color:${c.border};">${bvEsc(line)}</span>`;
 }
 
@@ -1634,7 +1724,7 @@ function buildTimeLine(label, scheduled, estimated, isDelayed) {
 async function renderBoatDrawer(boat) {
     activeSelection = { type: 'boat', data: boat };
     const opts = {
-        badge: bvDotLinea(boat.line),
+        badge: bvDotLinea(boat.line, boat),
         sub: [boat.line && boat.line !== '-' ? `Linea ${boat.line}` : '', boat.simulated && boat.lat ? 'posizione stimata' : ''].filter(Boolean).join(' · '),
         focusKey: `boat-${boat.id}`
     };
@@ -1789,12 +1879,77 @@ function normalizzaNomeUnita(nome) {
         .trim();
 }
 
+// ---- Icone dei mezzi: goccia (battelli) e pillola (bus/tram), orientate verso la direzione di marcia
+const boatHeadings = {};       // id -> { lat, lon, h }: ultima posizione usata e direzione nota (gradi, 0 = nord, in senso orario)
+const BV_MOVIMENTO_MIN_M = 6;  // sotto questo spostamento tra due aggiornamenti la direzione resta quella di prima
+
+function bvDistanzaM(lat1, lon1, lat2, lon2) {
+    const R = 6371000, rad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+function bvRotta(lat1, lon1, lat2, lon2) {
+    const rad = Math.PI / 180;
+    const y = Math.sin((lon2 - lon1) * rad) * Math.cos(lat2 * rad);
+    const x = Math.cos(lat1 * rad) * Math.sin(lat2 * rad) - Math.sin(lat1 * rad) * Math.cos(lat2 * rad) * Math.cos((lon2 - lon1) * rad);
+    return (Math.atan2(y, x) / rad + 360) % 360;
+}
+
+// Direzione di marcia: quella dal server (corse simulate) se c'e', altrimenti ricavata dallo spostamento tra due aggiornamenti. null = ancora ignota.
+function direzioneMezzo(boat) {
+    if (Number.isFinite(boat.heading)) { boatHeadings[boat.id] = { lat: boat.lat, lon: boat.lon, h: boat.heading }; return boat.heading; }
+    const prev = boatHeadings[boat.id];
+    if (!prev) { boatHeadings[boat.id] = { lat: boat.lat, lon: boat.lon, h: null }; return null; }
+    if (bvDistanzaM(prev.lat, prev.lon, boat.lat, boat.lon) >= BV_MOVIMENTO_MIN_M) {
+        prev.h = Math.round(bvRotta(prev.lat, prev.lon, boat.lat, boat.lon));
+        prev.lat = boat.lat; prev.lon = boat.lon;
+    }
+    return prev.h;
+}
+
+const eMezzoSuGomma = (boat) => !!boat.mode && boat.mode !== 'nav'; // bus e tram: pillola; battelli: goccia
+
+// Colori: i battelli hanno quelli ACTV di sempre; bus e tram usano i colori scritti nel GTFS (le linee hanno gli stessi numeri ma colori diversi)
+function coloriMezzo(boat) {
+    if (eMezzoSuGomma(boat) && boat.color) return { bg: boat.color, text: boat.textColor || '#ffffff', border: boat.border || '#ffffff' };
+    return getLineColors(String(boat.line).toUpperCase());
+}
+
+// Goccia: corpo tondo (r 13) con la punta in alto, che indica la direzione. Senza direzione nota resta un cerchio.
+// Pillola: capsula lunga nel senso di marcia con un piccolo chevron sul lato anteriore.
+function iconaMezzo(boat) {
+    const c = coloriMezzo(boat);
+    const h = direzioneMezzo(boat);
+    const gomma = eMezzoSuGomma(boat);
+    const stroke = boat.simulated ? '#2f81f7' : c.border;
+    const sw = 2.5;
+    let forma;
+    if (gomma) {
+        forma = `<rect x="9" y="1.5" width="22" height="37" rx="11" fill="${c.bg}" stroke="${stroke}" stroke-width="${sw}"/>`
+            + (h === null ? '' : `<path d="M15.5 8.5 L20 4.5 L24.5 8.5" fill="none" stroke="${c.text}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>`);
+    } else {
+        forma = h === null
+            ? `<circle cx="20" cy="20" r="13" fill="${c.bg}" stroke="${stroke}" stroke-width="${sw}"/>`
+            : `<path d="M20 1 L29.88 11.55 A13 13 0 1 1 10.12 11.55 Z" fill="${c.bg}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>`;
+    }
+    const linea = bvEsc(String(boat.line));
+    const piccolo = String(boat.line).length >= 3 ? ' style="font-size:9.5px"' : '';
+    const stile = `width:40px;height:40px;color:${c.text};--h:${h === null ? 0 : h}deg;`;
+    const html = `<div class="bv-veh${boat.simulated ? ' bv-veh-sim' : ''}" style="${stile}">`
+        + `<div class="bv-veh-shape"><svg viewBox="0 0 40 40" aria-hidden="true">${forma}</svg></div>`
+        + `<span class="bv-veh-txt"${piccolo}>${linea}</span>`
+        + (boat.simulated ? '<span class="bv-sim-badge">S</span>' : '')
+        + `</div>`;
+    return L.divIcon({ html, className: '', iconSize: [40, 40], iconAnchor: [20, 20] });
+}
+
 // Crea/aggiorna/rimuove il marker di una singola unità ACTV, nascondendola se un altro
 // utente ha inserito manualmente lo stesso nome unità (i suoi dati GPS sono più precisi).
 function renderOrHideBoatMarker(boat) {
     if (!boat.lat || !boat.lon) return;
 
-    if (currentFilterLines.length > 0 && !currentFilterLines.includes(boat.line.toUpperCase())) {
+    if (!mezzoVisibileFiltro(boat)) {
         if (boatMarkers[boat.id]) {
             oms.removeMarker(boatMarkers[boat.id]);
             map.removeLayer(boatMarkers[boat.id]);
@@ -1813,11 +1968,7 @@ function renderOrHideBoatMarker(boat) {
         return;
     }
 
-    const c = getLineColors(boat.line.toUpperCase());
-    const iconHtml = boat.simulated
-        ? `<div class="bv-boat-icon bv-boat-sim" style="background-color: ${c.bg}; color: ${c.text}; width: 26px; height: 26px; box-sizing: border-box;">${boat.line}<span class="bv-sim-badge">S</span></div>`
-        : `<div class="bv-boat-icon" style="background-color: ${c.bg}; color: ${c.text}; border: 2.5px solid ${c.border}; width: 26px; height: 26px; box-sizing: border-box;">${boat.line}</div>`;
-    const customBoatIcon = L.divIcon({ html: iconHtml, className: '', iconSize: [26, 26], iconAnchor: [13, 13] });
+    const customBoatIcon = iconaMezzo(boat);
 
     if (boatMarkers[boat.id]) {
         boatMarkers[boat.id].setLatLng([boat.lat, boat.lon]);
@@ -1929,9 +2080,14 @@ async function caricaWebcam() {
 async function fetchAndUpdateBoats() {
     if (!map || rewind.attivo) return;
     try {
-        const response = await fetch(`${API_URL}/api/vaporetti/live${bvMostraSimulate ? '?sim=1' : ''}`);
+        const q = bvMostraSimulate ? '?sim=1' : '';
+        const [response, resBus] = await Promise.all([
+            fetch(`${API_URL}/api/vaporetti/live${q}`),
+            fetch(`${API_URL}/api/bus/live${q}`).catch(() => null)   // server senza bus: restano i battelli
+        ]);
         if (!response.ok) throw new Error('HTTP ' + response.status);
-        const boats = await response.json();
+        let boats = await response.json();
+        if (resBus && resBus.ok) { try { boats = boats.concat(await resBus.json()); } catch (e) { /* bus non leggibili: solo battelli */ } }
         if (rewind.attivo) return;
         globalBoats = boats;
         showBateoLiveError(false);
@@ -1944,6 +2100,7 @@ async function fetchAndUpdateBoats() {
             map.removeLayer(boatMarkers[id]);
             delete boatMarkers[id];
         });
+        Object.keys(boatHeadings).forEach(id => { if (!idsAttuali.has(id)) delete boatHeadings[id]; });
 
         boats.forEach(boat => renderOrHideBoatMarker(boat));
 
@@ -2241,7 +2398,8 @@ async function rwCaricaChunk(c) {
         if (sessione !== rewind.sessione) return;                 // nel frattempo si è cambiato giorno o si è usciti
         for (const [id, bt] of Object.entries(dati.boats || {})) {
             let tb = rewind.boats.get(id);
-            if (!tb) { tb = { line: bt.line, label: bt.label || null, pts: [] }; rewind.boats.set(id, tb); }
+            if (!tb) { tb = { line: bt.line, label: bt.label || null, mode: bt.mode || (id.startsWith('bus-') ? 'bus' : 'nav'), pts: [] }; rewind.boats.set(id, tb); }
+            if (bt.color) { tb.color = bt.color; tb.textColor = bt.textColor; tb.border = bt.border; }
             if (bt.line && bt.line !== '-') tb.line = bt.line;
             if (bt.label) tb.label = bt.label;
             tb.pts = rwUnisci(tb.pts, bt.pts);
@@ -2297,10 +2455,21 @@ function rwTick(ts) {
     }
 }
 
-function rwIcona(line) {
-    const c = getLineColors(String(line || '-').toUpperCase());
-    const html = `<div class="bv-boat-icon" style="background-color: ${c.bg}; color: ${c.text}; border: 2.5px solid ${c.border}; width: 26px; height: 26px; box-sizing: border-box;">${bvEsc(line || '-')}</div>`;
-    return L.divIcon({ html, className: '', iconSize: [26, 26], iconAnchor: [13, 13] });
+// direzione di marcia all'istante t: dal segmento registrato che contiene t (null se fermo o senza dati)
+function rwDirezione(pts, t) {
+    const n = pts.length;
+    if (n < 2 || t < pts[0][0]) return null;
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (pts[mid][0] <= t) lo = mid; else hi = mid - 1; }
+    const a = pts[lo], b = pts[lo + 1];
+    if (!b || b[0] - a[0] > RW_GAP_MAX) return null;
+    if (bvDistanzaM(a[1], a[2], b[1], b[2]) < BV_MOVIMENTO_MIN_M) return null;
+    return Math.round(bvRotta(a[1], a[2], b[1], b[2]));
+}
+
+// stessa goccia (battelli) o pillola (bus) della mappa live; dir = direzione di marcia o null se ancora ignota
+function rwIcona(b, id, dir) {
+    return iconaMezzo({ id: 'rw:' + id, line: b.line || '-', mode: b.mode, color: b.color, textColor: b.textColor, border: b.border, heading: dir === null ? undefined : dir, lat: 0, lon: 0, simulated: false });
 }
 
 function rwDisegna() {
@@ -2311,14 +2480,18 @@ function rwDisegna() {
         if (!pos) return;
         visibili.add(id);
         let m = rewind.markers[id];
+        const dir = rwDirezione(b.pts, t);
         if (!m) {
-            m = L.marker(pos, { icon: rwIcona(b.line), zIndexOffset: 1000, keyboard: false });
+            m = L.marker(pos, { icon: rwIcona(b, id, dir), zIndexOffset: 1000, keyboard: false });
             m.on('click', () => rwApriBarca(id));
             m.addTo(rewind.layer);
-            m.rwLine = b.line;
+            m.rwDir = dir;
+            m.rwChiave = `${b.line}|${b.mode}|${b.color}|${dir === null ? 'x' : Math.round(dir / 8)}`;
             rewind.markers[id] = m;
         } else {
-            if (m.rwLine !== b.line) { m.setIcon(rwIcona(b.line)); m.rwLine = b.line; }
+            if (dir !== null) m.rwDir = dir;                    // fermo o senza dati: resta l'ultima direzione nota
+            const chiave = `${b.line}|${b.mode}|${b.color}|${m.rwDir === null ? 'x' : Math.round(m.rwDir / 8)}`;
+            if (m.rwChiave !== chiave) { m.setIcon(rwIcona(b, id, m.rwDir)); m.rwChiave = chiave; } // l'icona si rifa solo se cambia linea o la direzione (a passi di 8 gradi)
             m.setLatLng(pos);
         }
     });
@@ -2435,7 +2608,7 @@ function rwBarcaIntestazione(d) {
     const nome = d.nomeUnita || (det && det.boatLabel) || null;
     return {
         titolo: nome || `Linea ${lineaFinale}`,
-        badge: bvDotLinea(lineaFinale),
+        badge: bvDotLinea(lineaFinale, rewind.boats.get(d.id)),
         sub: `${nome ? `Linea ${lineaFinale} · ` : ''}Rewind alle ${rwOra(rewind.t, true)}`
     };
 }
