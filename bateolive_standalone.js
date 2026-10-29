@@ -244,6 +244,7 @@ export function initUIBateoLive() {
         .bv-stop-icon-inner:hover { scale: 1.4; }
 
         /* Badge linea (stessi colori ACTV ovunque) */
+        .bv-line-dot.bv-line-bus { min-width: 40px; padding: 0 8px; }
         .bv-line-dot { min-width: 24px; height: 24px; padding: 0 4px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; border: 2px solid; flex-shrink: 0; box-sizing: border-box; line-height: 1; }
 
         /* ---------- Tasti fluttuanti ---------- */
@@ -1696,7 +1697,8 @@ const bvEsc = (v) => (v == null ? '' : String(v)).replace(/[&<>"']/g, (c) => ({ 
 // Badge della linea con i colori ACTV (gli stessi di mappa e navigatore)
 function bvDotLinea(line, mezzo) {
     const c = mezzo && mezzo.line === line ? coloriMezzo(mezzo) : getLineColors(String(line).toUpperCase());
-    return `<span class="bv-line-dot" style="background-color:${c.bg};color:${c.text};border-color:${c.border};">${bvEsc(line)}</span>`;
+    const gomma = !!mezzo && mezzo.line === line && eMezzoSuGomma(mezzo);
+    return `<span class="bv-line-dot${gomma ? ' bv-line-bus' : ''}" style="background-color:${c.bg};color:${c.text};border-color:${c.border};">${bvEsc(line)}</span>`;
 }
 
 // Riquadro di riepilogo in cima al pannello
@@ -1880,7 +1882,7 @@ async function aggiornaFermateBus() {
         try {
             const res = await fetch(`${API_URL}/api/stops?modo=bus`);
             if (!res.ok) throw new Error('HTTP ' + res.status);
-            fermateBusTutte = await res.json();
+            fermateBusTutte = (await res.json()).filter(stop => Array.isArray(stop.modi) && !stop.modi.includes('nav')); // un server vecchio senza 'modi' non da' fermate bus
         } catch (e) {
             console.error('Errore caricamento fermate bus:', e);
             return;
@@ -1911,7 +1913,7 @@ async function loadStops() {
     try {
         const res = await fetch(`${API_URL}/api/stops`);
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        globalStops = await res.json();
+        globalStops = (await res.json()).filter(stop => !Array.isArray(stop.modi) || stop.modi.includes('nav')); // le fermate bus hanno un loro strato (zoom alto)
         showBateoLiveError(false);
         
         const stopIcon = L.divIcon({ html: '<div class="bv-stop-icon-inner"></div>', className: 'bv-stop-icon-wrap', iconSize: [14, 14], iconAnchor: [7, 7] });
