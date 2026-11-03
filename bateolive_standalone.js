@@ -6,7 +6,7 @@
 // Grafica: tema chiaro/scuro (segue il sistema, o il tasto sole/luna), tasto + per i pulsanti, pannelli unità/fermate.
 // ==========================================
 
-const API_URL = 'https://utilitybe.homeserver.foo';
+const API_URL = 'https://bateolivebe.homeserver.foo'; // backend BateoLive (cartella BateoLive-backend)
 let globalBoats = [];
 // Posizioni simulate dall'orario (corse non rilevate dal GPS): disattivate di base, la scelta resta salvata
 let bvMostraSimulate = (() => { try { return localStorage.getItem('bv_mostra_simulate') === '1'; } catch (e) { return false; } })();
@@ -113,9 +113,9 @@ const loadScript = (src) => new Promise((resolve, reject) => {
 
 // ---- Statistiche Umami: il tracker parte solo quando si apre questo modulo ----
 // ogni apertura viene registrata come pagina virtuale con un URL proprio del modulo.
-const UMAMI_SRC = 'https://utilitybe.homeserver.foo/stats/script.js';
+const UMAMI_SRC = 'https://bateolivebe.homeserver.foo/stats/script.js';
 const UMAMI_ID = '2b1a80cf-f9e6-4173-9ff3-0c1adefe19e3';
-const UMAMI_HOST = 'https://utilitybe.homeserver.foo/stats';
+const UMAMI_HOST = 'https://bateolivebe.homeserver.foo/stats';
 
 function tracciaApertura(urlVirtuale, titolo) {
     const invia = () => window.umami && window.umami.track((p) => ({ ...p, url: urlVirtuale, title: titolo }));
