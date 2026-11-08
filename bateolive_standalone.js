@@ -7,6 +7,84 @@
 // ==========================================
 
 const API_URL = 'https://bateolivebe.homeserver.foo'; // backend BateoLive (cartella BateoLive-backend)
+
+// ---------- Limiti di velocità nei canali (da /api/limiti/<profilo>, vedi limiti.js del backend) ----------
+// Il confronto posizione/canale si fa qui, a ogni punto GPS: nessuna richiesta al server oltre al download iniziale.
+const LIMITI_PROFILO = 'normale';   // 'normale' = limiti ordinari, 'actv' = limiti in deroga per ACTV
+let bvLimiti = null, bvLimitiInCorso = false, bvLimitiTentativo = 0, bvLimiteMostrato = null;
+
+function bvLimitiCostruisci(dati) {
+    const CELLA = 0.01; // gradi (~1 km): la griglia riduce i poligoni da controllare a pochi
+    const inAnello = (x, y, a) => {
+        let dentro = false;
+        for (let i = 0, j = a.length - 1; i < a.length; j = i++) {
+            const xi = a[i][0], yi = a[i][1], xj = a[j][0], yj = a[j][1];
+            if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) dentro = !dentro;
+        }
+        return dentro;
+    };
+    const inPoligono = (x, y, p) => { if (!inAnello(x, y, p[0])) return false; for (let k = 1; k < p.length; k++) if (inAnello(x, y, p[k])) return false; return true; };
+    const parti = [], griglia = new Map();
+    for (const c of (dati && dati.canali) || []) for (const poly of c.g) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const p of poly[0]) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+        const idx = parti.push({ b: [x0, y0, x1, y1], poly, v: c.v, n: c.n }) - 1;
+        for (let ix = Math.floor(x0 / CELLA); ix <= Math.floor(x1 / CELLA); ix++)
+            for (let iy = Math.floor(y0 / CELLA); iy <= Math.floor(y1 / CELLA); iy++) {
+                const k = ix + ',' + iy;
+                (griglia.get(k) || griglia.set(k, []).get(k)).push(idx);
+            }
+    }
+    const alla = (lat, lon) => {
+        const cand = griglia.get(Math.floor(lon / CELLA) + ',' + Math.floor(lat / CELLA));
+        if (!cand) return null;
+        let meglio = null;
+        for (const i of cand) {
+            const p = parti[i];
+            if (p.v <= 0 || lon < p.b[0] || lon > p.b[2] || lat < p.b[1] || lat > p.b[3] || !inPoligono(lon, lat, p.poly)) continue;
+            if (!meglio || p.v < meglio.limite) meglio = { limite: p.v, nome: p.n }; // tratti sovrapposti: vale il limite più basso
+        }
+        return meglio;
+    };
+    // con il GPS ogni tanto si esce per un attimo dal canale (rive, precisione): per 10 s resta l'ultimo limite noto
+    let ultimo = null, ultimoT = 0;
+    return { stabile(lat, lon, adesso) {
+        const r = alla(lat, lon);
+        if (r) { ultimo = r; ultimoT = adesso; return r; }
+        return ultimo && adesso - ultimoT < 10000 ? ultimo : null;
+    } };
+}
+
+function caricaLimitiVelocita() {
+    if (bvLimiti || bvLimitiInCorso || Date.now() - bvLimitiTentativo < 60000) return; // se fallisce, riprova al massimo una volta al minuto
+    bvLimitiInCorso = true; bvLimitiTentativo = Date.now();
+    fetch(API_URL + '/api/limiti/' + LIMITI_PROFILO)
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(d => { bvLimiti = bvLimitiCostruisci(d); })
+        .catch(e => console.warn('Limiti di velocità non disponibili:', e.message))
+        .finally(() => { bvLimitiInCorso = false; });
+}
+
+function aggiornaLimiteVelocita(lat, lon, now) {
+    const el = document.getElementById('bv-limite');
+    if (!el) return;
+    if (!bvLimiti) { caricaLimitiVelocita(); return; }
+    const r = bvLimiti.stabile(lat, lon, now);
+    const v = r ? r.limite : null;
+    if (v === bvLimiteMostrato) return;
+    bvLimiteMostrato = v;
+    if (v === null) { el.hidden = true; el.textContent = ''; el.removeAttribute('title'); return; }
+    el.innerHTML = String(v);
+    el.title = 'Limite di velocità' + (r.nome ? ' · ' + r.nome : '');
+    el.hidden = false;
+}
+
+function azzeraLimiteVelocita() {
+    bvLimiteMostrato = null;
+    const el = document.getElementById('bv-limite');
+    if (el) { el.hidden = true; el.textContent = ''; }
+}
+
 let globalBoats = [];
 // Posizioni simulate dall'orario (corse non rilevate dal GPS): disattivate di base, la scelta resta salvata
 let bvMostraSimulate = (() => { try { return localStorage.getItem('bv_mostra_simulate') === '1'; } catch (e) { return false; } })();
@@ -297,6 +375,9 @@ export function initUIBateoLive() {
         .bv-speed-wrapper { display: flex; align-items: baseline; justify-content: center; gap: 5px; }
         .bv-speed-val { font-size: 42px; font-weight: 900; color: var(--bv-primary); line-height: 0.9; font-variant-numeric: tabular-nums; }
         .bv-speed-unit { font-size: 16px; font-weight: bold; color: var(--bv-muted); }
+        /* ---------- limite di velocità del canale: cartello di divieto (cerchio bianco, bordo rosso) a sinistra della velocità ---------- */
+        .bv-limite { flex: none; align-self: center; display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; box-sizing: border-box; border-radius: 50%; border: 5px solid #d3151c; background: #fff; color: #111; font-size: 22px; font-weight: 800; line-height: 1; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+        .bv-limite[hidden] { display: none !important; }
 
         .bv-clock { display: block; margin-top: 6px; text-align: center; font-size: 17px; font-weight: 800; color: var(--bv-muted); font-variant-numeric: tabular-nums; letter-spacing: 0.5px; line-height: 1; }
 
@@ -530,6 +611,7 @@ export function initUIBateoLive() {
         <!-- HUD Velocità -->
         <div id="bv-hud-speed" class="bv-hud-speed">
             <div class="bv-speed-wrapper">
+                <span id="bv-limite" class="bv-limite" hidden aria-label="Limite di velocità"></span>
                 <span id="bv-speed-val" class="bv-speed-val">0.0</span>
                 <span class="bv-speed-unit">km/h</span>
             </div>
@@ -1080,6 +1162,7 @@ function toggleBvGPS() {
         toggleBvCenterMap(false);
         toggleBvMapRotation(false);
         
+        azzeraLimiteVelocita();
         if (watchId) navigator.geolocation.clearWatch(watchId);
         if (userMarker) {
             map.removeLayer(userMarker);
@@ -1100,6 +1183,7 @@ function toggleBvGPS() {
         toggleBvMapRotation(true);   // col GPS acceso la mappa ruota subito con la rotta
         speedHistory = [];
         
+        caricaLimitiVelocita();
         watchId = navigator.geolocation.watchPosition(elaboraBvPosizioneGPS, (err) => {
             hudStatus.innerText = "Errore GPS: " + err.message;
             hudStatus.style.background = "rgba(227, 0, 27, 0.8)";
@@ -1122,6 +1206,7 @@ function elaboraBvPosizioneGPS(position) {
 
     let speedKmh = avgSpeedMs * 3.6;
     document.getElementById('bv-speed-val').textContent = speedKmh.toFixed(1);
+    aggiornaLimiteVelocita(coords.latitude, coords.longitude, now);
 
     if (coords.heading !== null && (rawSpeedMs >= 0.5 || lastValidHeading === null)) {
         lastValidHeading = coords.heading;
