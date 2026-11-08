@@ -38,13 +38,14 @@ function bvLimitiCostruisci(dati) {
     const alla = (lat, lon) => {
         const cand = griglia.get(Math.floor(lon / CELLA) + ',' + Math.floor(lat / CELLA));
         if (!cand) return null;
-        let meglio = null;
+        let meglio = null, senzaLimite = null;
         for (const i of cand) {
             const p = parti[i];
-            if (p.v <= 0 || lon < p.b[0] || lon > p.b[2] || lat < p.b[1] || lat > p.b[3] || !inPoligono(lon, lat, p.poly)) continue;
+            if (lon < p.b[0] || lon > p.b[2] || lat < p.b[1] || lat > p.b[3] || !inPoligono(lon, lat, p.poly)) continue;
+            if (p.v <= 0) { if (!senzaLimite) senzaLimite = { limite: 0, nome: p.n }; continue; } // tratto senza limite nel dato: si tiene solo il nome
             if (!meglio || p.v < meglio.limite) meglio = { limite: p.v, nome: p.n }; // tratti sovrapposti: vale il limite più basso
         }
-        return meglio;
+        return meglio || senzaLimite;
     };
     // con il GPS ogni tanto si esce per un attimo dal canale (rive, precisione): per 10 s resta l'ultimo limite noto
     let ultimo = null, ultimoT = 0;
@@ -66,23 +67,29 @@ function caricaLimitiVelocita() {
 }
 
 function aggiornaLimiteVelocita(lat, lon, now) {
-    const el = document.getElementById('bv-limite');
-    if (!el) return;
+    const coord = document.getElementById('bv-coord');
+    if (coord) coord.textContent = Math.abs(lat).toFixed(5) + '° ' + (lat >= 0 ? 'N' : 'S') + ', ' + Math.abs(lon).toFixed(5) + '° ' + (lon >= 0 ? 'E' : 'W');
+    const el = document.getElementById('bv-limite'), nomeEl = document.getElementById('bv-canale');
+    if (!el || !nomeEl) return;
     if (!bvLimiti) { caricaLimitiVelocita(); return; }
     const r = bvLimiti.stabile(lat, lon, now);
-    const v = r ? r.limite : null;
-    if (v === bvLimiteMostrato) return;
-    bvLimiteMostrato = v;
-    if (v === null) { el.hidden = true; el.textContent = ''; el.removeAttribute('title'); return; }
-    el.innerHTML = String(v);
-    el.title = 'Limite di velocità' + (r.nome ? ' · ' + r.nome : '');
-    el.hidden = false;
+    const v = r && r.limite > 0 ? r.limite : null;   // 0 = nel dato non c'è un limite: niente cartello
+    const nome = r ? r.nome : '';
+    const chiave = v + '|' + nome;
+    if (chiave === bvLimiteMostrato) return;
+    bvLimiteMostrato = chiave;
+    if (v === null) { el.hidden = true; el.textContent = ''; el.removeAttribute('title'); }
+    else { el.textContent = String(v); el.title = 'Limite di velocità' + (nome ? ' · ' + nome : ''); el.hidden = false; }
+    nomeEl.textContent = nome;
+    nomeEl.hidden = !nome;
 }
 
 function azzeraLimiteVelocita() {
     bvLimiteMostrato = null;
-    const el = document.getElementById('bv-limite');
-    if (el) { el.hidden = true; el.textContent = ''; }
+    for (const id of ['bv-limite', 'bv-canale', 'bv-coord']) {
+        const e = document.getElementById(id);
+        if (e) { e.textContent = ''; if (id !== 'bv-coord') e.hidden = true; }
+    }
 }
 
 let globalBoats = [];
@@ -378,6 +385,12 @@ export function initUIBateoLive() {
         /* ---------- limite di velocità del canale: cartello di divieto (cerchio bianco, bordo rosso) a sinistra della velocità ---------- */
         .bv-limite { flex: none; align-self: center; display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; box-sizing: border-box; border-radius: 50%; border: 5px solid #d3151c; background: #fff; color: #111; font-size: 22px; font-weight: 800; line-height: 1; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
         .bv-limite[hidden] { display: none !important; }
+        /* nome del canale e coordinate sotto la velocità */
+        .bv-hud-geo { margin-top: 6px; text-align: center; line-height: 1.3; }
+        .bv-canale { max-width: 200px; margin: 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; letter-spacing: 0.3px; color: var(--bv-text); }
+        .bv-canale[hidden] { display: none !important; }
+        .bv-coord { font-size: 11px; font-weight: 600; color: var(--bv-muted); font-variant-numeric: tabular-nums; }
+        .bv-coord:empty { display: none; }
 
         .bv-clock { display: block; margin-top: 6px; text-align: center; font-size: 17px; font-weight: 800; color: var(--bv-muted); font-variant-numeric: tabular-nums; letter-spacing: 0.5px; line-height: 1; }
 
@@ -614,6 +627,10 @@ export function initUIBateoLive() {
                 <span id="bv-limite" class="bv-limite" hidden aria-label="Limite di velocità"></span>
                 <span id="bv-speed-val" class="bv-speed-val">0.0</span>
                 <span class="bv-speed-unit">km/h</span>
+            </div>
+            <div class="bv-hud-geo">
+                <div id="bv-canale" class="bv-canale" hidden></div>
+                <div id="bv-coord" class="bv-coord"></div>
             </div>
             <div id="bv-clock" class="bv-clock">--:--:--</div>
         </div>
