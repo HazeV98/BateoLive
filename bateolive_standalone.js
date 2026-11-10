@@ -371,6 +371,7 @@ export function initUIBateoLive() {
         .bv-seg-riga { display: flex; justify-content: space-between; gap: 12px; padding: 11px 2px; border-bottom: 1px solid var(--bv-border); font-size: 14px; color: var(--bv-text); }
         .bv-seg-riga span { color: var(--bv-muted); }
         .bv-seg-note { margin-top: 12px; font-size: 13px; line-height: 1.45; color: var(--bv-text); white-space: pre-wrap; word-break: break-word; }
+        .bv-seg-sez { margin-top: 14px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--bv-muted); }
         .bv-fab-s { font-weight: 800; font-size: 19px; line-height: 1; font-family: inherit; }
         /* Unità simulata dall'orario (non rilevata dal GPS): contorno blu e badge S */
         .bv-boat-sim { position: relative; border: 2.5px solid #2f81f7; box-shadow: 0 0 0 2px rgba(47, 129, 247, 0.35), 0 2px 8px rgba(0,0,0,0.45); }
@@ -2560,15 +2561,20 @@ function aggiornaSegnaliMappa() {
     }
 }
 
+// Sì / No, oppure un trattino se il dato non è mai stato inserito (segnali salvati prima di questi campi)
+const snx = (v) => (v == null ? '-' : (v ? 'Sì' : 'No'));
+
 function apriSchedaSegnale(s) {
     activeSelection = { type: 'segnale', id: s.id };
     const riga = (k, v) => `<div class="bv-seg-riga"><span>${k}</span><b>${v}</b></div>`;
     const html = riga('Canale', bvEsc(s.canale) || '—')
         + riga('Numero', bvEsc(s.numero) || '—')
         + riga('Tipo', bvEsc(etichettaTipoSegnale(s.tipo)))
-        + (s.tipo === 'gruppo' ? riga('Numero di pali', bvEsc(s.pali)) : '')
+        + (s.tipo === 'gruppo' ? riga('Numero di pali', bvEsc(s.pali)) + riga('Pali presenti', bvEsc(s.paliPresenti == null ? s.pali : s.paliPresenti)) : '')
         + riga('Presente', s.presente ? 'Sì' : 'No')
-        + riga('Luce', s.luce ? 'Sì' : 'No')
+        + '<div class="bv-seg-sez">Luce</div>'
+        + riga('Funzionante', snx(s.luceFunzionante))
+        + riga('Struttura presente', snx(s.luceStruttura))
         + (s.note ? `<div class="bv-seg-note">${bvEsc(s.note)}</div>` : '');
     openBateoLiveDrawer(`${etichettaTipoSegnale(s.tipo)}${s.numero ? ' n. ' + s.numero : ''}`, html, { badge: '<span class="bv-seg-badge"></span>', sub: s.canale || 'Segnale' });
 }
@@ -2595,6 +2601,8 @@ async function bvSegnaliPdf() {
         }
         const canali = [...gruppi.keys()].sort((a, b) => (a === 'non indicato') - (b === 'non indicato') || confronta(a, b));
 
+        // Se il nome comincia già con "Canale" (o è un rio, un bacino...) non si ripete la parola davanti
+        const titoloCanale = (c) => (c === 'non indicato' || !/^(canal|rio\b|bacino\b)/i.test(c)) ? `Canale ${c}` : c;
         const doc = new jsPDF({ unit: 'mm', format: 'a4' });
         const W = 210, M = 15, MAXY = 282, LARG = W - 2 * M;
         let y = 20;
@@ -2609,20 +2617,25 @@ async function bvSegnaliPdf() {
         for (const canale of canali) {
             salto(22);
             doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
-            doc.text(`Canale ${canale}`, M, y);
+            doc.text(titoloCanale(canale), M, y);
             doc.setDrawColor(180); doc.line(M, y + 1.8, W - M, y + 1.8);
             y += 8;
             const lista = gruppi.get(canale).slice().sort((a, b) => confronta(a.numero || '', b.numero || ''));
             for (const s of lista) {
-                const righe = [];
-                righe.push(`Presente: ${s.presente ? 'Sì' : 'No'}   Luce: ${s.luce ? 'Sì' : 'No'}${s.tipo === 'gruppo' ? `   Pali: ${s.pali}` : ''}`);
+                const sn = (v) => (v == null ? '-' : (v ? 'Sì' : 'No'));
+                const righe = [];   // { t: testo, i: rientro in mm }
+                righe.push({ t: `Presente: ${sn(s.presente)}`, i: 0 });
+                if (s.tipo === 'gruppo') righe.push({ t: `Pali: ${s.pali} - presenti: ${s.paliPresenti == null ? s.pali : s.paliPresenti}`, i: 0 });
+                righe.push({ t: 'Luce', i: 0 });   // categoria con le sue due voci, sempre presenti
+                righe.push({ t: `Funzionante: ${sn(s.luceFunzionante)}`, i: 5 });
+                righe.push({ t: `Struttura presente: ${sn(s.luceStruttura)}`, i: 5 });
                 const note = pulisci(s.note);
-                if (note) righe.push(...doc.setFont('helvetica', 'normal').setFontSize(9.5).splitTextToSize(`Note: ${note}`, LARG - 4));
+                if (note) righe.push(...doc.setFont('helvetica', 'normal').setFontSize(9.5).splitTextToSize(`Note: ${note}`, LARG - 4).map(t => ({ t, i: 0 })));
                 salto(7 + righe.length * 4.6 + 3);
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5);
                 doc.text(`${etichettaTipoSegnale(s.tipo)} numero ${pulisci(s.numero) || '-'}`, M + 2, y); y += 5.2;
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
-                for (const r of righe) { doc.text(r, M + 4, y); y += 4.6; }
+                for (const r of righe) { doc.text(r.t, M + 4 + r.i, y); y += 4.6; }
                 y += 3;
             }
             y += 3;
