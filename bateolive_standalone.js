@@ -11,6 +11,7 @@ const API_URL = 'https://bateolivebe.homeserver.foo'; // backend BateoLive (cart
 // ---------- Limiti di velocità nei canali (da /api/limiti/<profilo>, vedi limiti.js del backend) ----------
 // Il confronto posizione/canale si fa qui, a ogni punto GPS: nessuna richiesta al server oltre al download iniziale.
 const LIMITI_PROFILO = 'normale';   // 'normale' = limiti ordinari, 'actv' = limiti in deroga per ACTV
+let bvLimitiDati = null; // dati grezzi dei limiti: servono anche alle etichette dei nomi dei canali
 let bvLimiti = null, bvLimitiInCorso = false, bvLimitiTentativo = 0, bvLimiteMostrato = null;
 
 function bvLimitiCostruisci(dati) {
@@ -61,7 +62,7 @@ function caricaLimitiVelocita() {
     bvLimitiInCorso = true; bvLimitiTentativo = Date.now();
     fetch(API_URL + '/api/limiti/' + LIMITI_PROFILO)
         .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(d => { bvLimiti = bvLimitiCostruisci(d); })
+        .then(d => { bvLimitiDati = d; bvLimiti = bvLimitiCostruisci(d); })
         .catch(e => console.warn('Limiti di velocità non disponibili:', e.message))
         .finally(() => { bvLimitiInCorso = false; });
 }
@@ -114,6 +115,23 @@ let hiddenActvUnitNames = new Set();
 // Livelli Mappa e Stile
 let baseOSM, baseSat, nauticLayer;
 let currentMapMode = 0; // 0: Base, 1: Satellitare
+
+// Opzioni della mappa (finestra "Stile mappa"): salvate sul dispositivo e riapplicate alle aperture successive.
+// Nessun account in questa versione: le opzioni sono uguali per tutti e "Info briccole" è spenta di base.
+const BV_OPZ_CHIAVE = 'bv_opzioni_mappa';
+const BV_OPZ_DEFAULT = { nautico: true, cam: true, canali: false, briccole: false };
+const opzMappa = (() => {
+    let o = {};
+    try { o = JSON.parse(localStorage.getItem(BV_OPZ_CHIAVE) || '{}') || {}; } catch (e) { /* si parte dai valori di base */ }
+    const r = {};
+    for (const k of Object.keys(BV_OPZ_DEFAULT)) r[k] = typeof o[k] === 'boolean' ? o[k] : BV_OPZ_DEFAULT[k];
+    return r;
+})();
+
+// Segnali (briccole): elenco dal server (data/segnali.json), solo visione. Si modificano dalla versione completa di BateoLive.
+let segnali = [];
+let segnaliCaricati = false;
+let segnaliInCaricamento = false;
 
 // Variabili GPS, Identità e Unità Personalizzata
 let watchId = null;
@@ -318,6 +336,41 @@ export function initUIBateoLive() {
         .bv-cam-player { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; overflow: hidden; }
         .bv-cam-player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
         .bv-cam-link { display: block; margin-top: 12px; text-align: center; font-size: 13px; font-weight: 600; color: var(--bv-primary); text-decoration: none; }
+
+        /* ---------- Stile mappa e opzioni ---------- */
+        .bv-modal-btn.secondario { background: transparent; color: var(--bv-text); border: 1px solid var(--bv-border); margin-top: 10px; }
+        .bv-stile-scelte { display: flex; gap: 10px; margin-bottom: 14px; flex-shrink: 0; }
+        .bv-stile-opz { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px; border-radius: 12px; border: 2px solid var(--bv-border); background: var(--bv-fill); color: var(--bv-text); font-size: 13px; font-weight: 700; cursor: pointer; }
+        .bv-stile-opz i { font-size: 20px; color: var(--bv-muted); }
+        .bv-stile-opz.active { border-color: var(--bv-primary); background: var(--bv-tint); color: var(--bv-primary); }
+        .bv-stile-opz.active i { color: var(--bv-primary); }
+        .bv-opz { border-top: 1px solid var(--bv-border); padding-top: 4px; overflow-y: auto; min-height: 0; }
+        .bv-opz > summary { cursor: pointer; padding: 10px 2px; font-size: 14px; font-weight: 700; color: var(--bv-text); list-style: none; display: flex; align-items: center; justify-content: space-between; }
+        .bv-opz > summary::-webkit-details-marker { display: none; }
+        .bv-opz > summary::after { content: ''; width: 7px; height: 7px; border-right: 2px solid var(--bv-muted); border-bottom: 2px solid var(--bv-muted); transform: rotate(45deg); margin: -3px 4px 0 0; transition: transform 0.2s; }
+        .bv-opz[open] > summary::after { transform: rotate(-135deg); margin-top: 3px; }
+        .bv-opz-riga { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px; font-size: 14px; color: var(--bv-text); cursor: pointer; }
+        .bv-opz-dx { display: flex; align-items: center; gap: 12px; }
+        .bv-opz-pdf { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--bv-border); background: var(--bv-fill); color: var(--bv-danger); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+        .bv-opz-pdf:disabled { opacity: 0.5; }
+        .bv-sw { position: relative; width: 42px; height: 24px; flex-shrink: 0; display: inline-block; }
+        .bv-sw input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
+        .bv-sw i { position: absolute; inset: 0; border-radius: 12px; background: var(--bv-border); transition: background 0.2s; pointer-events: none; }
+        .bv-sw i::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.3); transition: transform 0.2s; }
+        .bv-sw input:checked + i { background: var(--bv-primary); }
+        .bv-sw input:checked + i::after { transform: translateX(18px); }
+
+        /* ---------- Nomi dei canali ---------- */
+        .bv-canale-lbl { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%) rotate(var(--marker-rotation, 0deg)); white-space: nowrap; pointer-events: none; font-size: 11px; font-weight: 700; font-style: italic; color: #0b3c6e; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 5px #fff, 0 0 5px #fff; }
+        .bv-tiles-sat-attivo .bv-canale-lbl { color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000, 0 0 5px #000; }
+
+        /* ---------- Segnali (briccole) ---------- */
+        .bv-seg-dot-wrap { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .bv-seg-dot { width: 13px; height: 13px; border-radius: 50%; background: #000; border: 2px solid #fff; box-sizing: border-box; box-shadow: 0 1px 4px rgba(0,0,0,0.6); }
+        .bv-seg-badge { width: 26px; height: 26px; border-radius: 50%; background: #000; flex-shrink: 0; border: 2px solid #fff; box-sizing: border-box; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+        .bv-seg-riga { display: flex; justify-content: space-between; gap: 12px; padding: 11px 2px; border-bottom: 1px solid var(--bv-border); font-size: 14px; color: var(--bv-text); }
+        .bv-seg-riga span { color: var(--bv-muted); }
+        .bv-seg-note { margin-top: 12px; font-size: 13px; line-height: 1.45; color: var(--bv-text); white-space: pre-wrap; word-break: break-word; }
         .bv-fab-s { font-weight: 800; font-size: 19px; line-height: 1; font-family: inherit; }
         /* Unità simulata dall'orario (non rilevata dal GPS): contorno blu e badge S */
         .bv-boat-sim { position: relative; border: 2.5px solid #2f81f7; box-shadow: 0 0 0 2px rgba(47, 129, 247, 0.35), 0 2px 8px rgba(0,0,0,0.45); }
@@ -651,7 +704,7 @@ export function initUIBateoLive() {
             <div id="bv-fab-rotate" class="bv-fab" onclick="toggleBvMapRotation()" title="Rotazione mappa (rotta in alto)" style="display: none;">
                 <i class="fa-regular fa-compass"></i>
             <span class="bv-fab-lbl">Ruota mappa</span></div>
-            <div id="bv-fab-layers" class="bv-fab" onclick="cambiaStileBvMappa()" title="Cambia stile cartografico">
+            <div id="bv-fab-layers" class="bv-fab" onclick="apriStileMappaModal()" title="Stile mappa e livelli">
                 <i class="fa-solid fa-layer-group"></i>
             <span class="bv-fab-lbl">Stile mappa</span></div>
             <div id="bv-fab-tema" class="bv-fab bv-fab-tema" onclick="toggleBvTema()" role="button" title="Passa al tema scuro" aria-label="Passa al tema scuro">
@@ -723,6 +776,31 @@ export function initUIBateoLive() {
             </div>
         </div>
 
+        <!-- Stile mappa: base cartografica e opzioni dei livelli -->
+        <div id="bv-stile-modal" class="bv-modal-overlay" onclick="chiudiBateoLiveModals(event)">
+            <div class="bv-modal" onclick="event.stopPropagation()">
+                <h3>Stile mappa</h3>
+                <div class="bv-stile-scelte">
+                    <button type="button" id="bv-stile-0" class="bv-stile-opz" onclick="impostaStileMappa(0)"><i class="fa-solid fa-map"></i><span>OpenStreetMap</span></button>
+                    <button type="button" id="bv-stile-1" class="bv-stile-opz" onclick="impostaStileMappa(1)"><i class="fa-solid fa-satellite"></i><span>Satellitare</span></button>
+                </div>
+                <details class="bv-opz" id="bv-opz-det">
+                    <summary>Opzioni</summary>
+                    <label class="bv-opz-riga"><span>Layer nautico</span><span class="bv-sw"><input type="checkbox" id="bv-opz-nautico" onchange="cambiaOpzioneMappa('nautico', this.checked)"><i></i></span></label>
+                    <label class="bv-opz-riga"><span>Videocamere</span><span class="bv-sw"><input type="checkbox" id="bv-opz-cam" onchange="cambiaOpzioneMappa('cam', this.checked)"><i></i></span></label>
+                    <label class="bv-opz-riga"><span>Nomi canali</span><span class="bv-sw"><input type="checkbox" id="bv-opz-canali" onchange="cambiaOpzioneMappa('canali', this.checked)"><i></i></span></label>
+                    <div class="bv-opz-riga" id="bv-opz-briccole-riga">
+                        <span>Info briccole</span>
+                        <span class="bv-opz-dx">
+                            <button type="button" id="bv-opz-pdf" class="bv-opz-pdf" onclick="bvSegnaliPdf()" title="Scarica il PDF riepilogativo dei segnali" aria-label="Scarica il PDF riepilogativo dei segnali"><i class="fa-solid fa-file-pdf"></i></button>
+                            <label class="bv-sw"><input type="checkbox" id="bv-opz-briccole" onchange="cambiaOpzioneMappa('briccole', this.checked)"><i></i></label>
+                        </span>
+                    </div>
+                </details>
+                <button type="button" class="bv-modal-btn secondario" onclick="chiudiStileMappaModal()">Chiudi</button>
+            </div>
+        </div>
+
         <!-- Sottomodale Nome barca -->
         <div id="bv-unit-modal" class="bv-modal-overlay" onclick="chiudiBateoLiveModals(event)">
             <div class="bv-modal" onclick="event.stopPropagation()">
@@ -789,7 +867,11 @@ export function initUIBateoLive() {
     window.toggleBvGPS = toggleBvGPS;
     window.toggleBvCenterMap = toggleBvCenterMap;
     window.toggleBvMapRotation = toggleBvMapRotation;
-    window.cambiaStileBvMappa = cambiaStileBvMappa;
+    window.apriStileMappaModal = apriStileMappaModal;
+    window.chiudiStileMappaModal = chiudiStileMappaModal;
+    window.impostaStileMappa = impostaStileMappa;
+    window.cambiaOpzioneMappa = cambiaOpzioneMappa;
+    window.bvSegnaliPdf = bvSegnaliPdf;
     window.toggleBvMenu = toggleBvMenu;
     avviaFabLayout();
     window.toggleBvSimulate = toggleBvSimulate;
@@ -934,7 +1016,7 @@ export async function avviaMotoreBateoLive() {
             zoomControl: false,
             zoomSnap: 0.25,
             zoomDelta: 0.5,
-            layers: [baseOSM, nauticLayer]
+            layers: opzMappa.nautico ? [baseOSM, nauticLayer] : [baseOSM]
         }).setView([45.4371, 12.3326], 13);
         map.on('zoomend zoomlevelschange', aggiornaBvZoomBtn);
         aggiornaBvZoomBtn();
@@ -954,7 +1036,9 @@ export async function avviaMotoreBateoLive() {
         loadStops();
         map.on('moveend', pianificaFermateBus);
         pianificaFermateBus();
+        map.on('moveend', pianificaOverlayMappa);   // nomi canali e segnali: zoom alto, solo riquadro visibile
         caricaWebcam();
+        applicaOpzioniMappa();
         fetchAndUpdateBoats();
         fetchInterval = setInterval(() => {
             fetchAndUpdateBoats();
@@ -985,37 +1069,84 @@ function salvaConfigurazioneUnita() {
     chiudiBateoLiveModals({ target: { classList: { contains: () => true } } });
 }
 
-function cambiaStileBvMappa() {
+let bvMessaggioHudTimer = null;
+function bvMessaggioHud(testo, ms = 2500) {
+    const hud = document.getElementById('bv-hud-status');
+    if (!hud) return;
+    hud.innerText = testo;
+    hud.style.background = "rgba(0, 82, 155, 0.9)";
+    hud.style.display = 'block';
+    clearTimeout(bvMessaggioHudTimer);
+    bvMessaggioHudTimer = setTimeout(() => {
+        if (watchId && !lastValidHeading && document.getElementById('bv-speed-val').textContent === "0.0") {
+            hud.innerText = "Acquisizione GPS...";
+            hud.style.background = "rgba(0,0,0,0.6)";
+        } else {
+            hud.style.display = 'none';
+        }
+    }, ms);
+}
+
+// Finestra "Stile mappa": base (OpenStreetMap / satellitare) e, sotto, le opzioni dei livelli (chiuse di base)
+function apriStileMappaModal() {
     if (!map) return;
-    
-    currentMapMode = (currentMapMode + 1) % 2;
-    const hudStatus = document.getElementById('bv-hud-status');
-    
+    sincronizzaFinestraStile();
+    document.getElementById('bv-stile-modal').classList.add('active');
+    lockBateoLiveMap();
+}
+
+function chiudiStileMappaModal() {
+    chiudiBateoLiveModals({ target: { classList: { contains: () => true } } });
+}
+
+function sincronizzaFinestraStile() {
+    for (const m of [0, 1]) {
+        const b = document.getElementById('bv-stile-' + m);
+        if (b) b.classList.toggle('active', currentMapMode === m);
+    }
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.checked = !!v; };
+    set('bv-opz-nautico', opzMappa.nautico);
+    set('bv-opz-cam', opzMappa.cam);
+    set('bv-opz-canali', opzMappa.canali);
+    set('bv-opz-briccole', opzMappa.briccole);
+}
+
+function impostaStileMappa(modo) {
+    if (!map) return;
+    currentMapMode = modo === 1 ? 1 : 0;
     if (map.hasLayer(baseOSM)) map.removeLayer(baseOSM);
     if (map.hasLayer(baseSat)) map.removeLayer(baseSat);
-    
-    if (!map.hasLayer(nauticLayer)) map.addLayer(nauticLayer);
-
-    if (currentMapMode === 0) {
-        map.addLayer(baseOSM);
-        hudStatus.innerText = "Mappa base nautica";
-    } else if (currentMapMode === 1) {
-        map.addLayer(baseSat);
-        hudStatus.innerText = "Mappa Satellitare";
+    map.addLayer(currentMapMode === 0 ? baseOSM : baseSat);
+    if (opzMappa.nautico) {
+        if (!map.hasLayer(nauticLayer)) map.addLayer(nauticLayer);
+        nauticLayer.bringToFront();
     }
-    
-    if (map.hasLayer(nauticLayer)) nauticLayer.bringToFront();
+    const root = document.getElementById('modal-bateolive-main');
+    if (root) root.classList.toggle('bv-tiles-sat-attivo', currentMapMode === 1);
+    sincronizzaFinestraStile();
+    bvMessaggioHud(currentMapMode === 0 ? "Mappa base nautica" : "Mappa Satellitare", 2000);
+}
 
-    hudStatus.style.background = "rgba(0, 82, 155, 0.9)";
-    hudStatus.style.display = 'block';
-    setTimeout(() => {
-        if (watchId && !lastValidHeading && document.getElementById('bv-speed-val').textContent === "0.0") {
-            hudStatus.innerText = "Acquisizione GPS...";
-            hudStatus.style.background = "rgba(0,0,0,0.6)";
-        } else {
-            hudStatus.style.display = 'none';
-        }
-    }, 2000);
+function cambiaOpzioneMappa(chiave, valore) {
+    if (!(chiave in BV_OPZ_DEFAULT)) return;
+    opzMappa[chiave] = !!valore;
+    try { localStorage.setItem(BV_OPZ_CHIAVE, JSON.stringify(opzMappa)); } catch (e) { /* senza storage vale solo per questa sessione */ }
+    applicaOpzioniMappa();
+}
+
+// Applica alla mappa le opzioni scelte (all'apertura e a ogni cambio)
+function applicaOpzioniMappa() {
+    if (!map) return;
+    if (opzMappa.nautico) {
+        if (!map.hasLayer(nauticLayer)) map.addLayer(nauticLayer);
+        nauticLayer.bringToFront();
+    } else if (map.hasLayer(nauticLayer)) {
+        map.removeLayer(nauticLayer);
+    }
+    if (!opzMappa.cam && activeSelection && activeSelection.type === 'webcam') closeBateoLiveDrawer();
+    disegnaWebcam();
+    aggiornaNomiCanali();
+    aggiornaUiSegnali();
 }
 
 // ---------------------------------------------------------------- etichette e disposizione dei tasti
@@ -1492,6 +1623,7 @@ function chiudiBateoLive() {
     if (rewind.attivo) chiudiRewind();
     document.getElementById('modal-bateolive-main').style.display = 'none';
     closeBateoLiveDrawer();
+    segnaliCaricati = false;   // alla prossima apertura si rilegge l'elenco dei segnali
     if (watchId) navigator.geolocation.clearWatch(watchId);
     document.getElementById('bv-hud-compass').style.display = 'none';
     document.getElementById('bv-hud-speed').style.display = 'none';
@@ -1556,6 +1688,7 @@ function chiudiBateoLiveModals(e) {
     document.getElementById('bv-search-modal').classList.remove('active');
     document.getElementById('bv-filter-modal').classList.remove('active');
     document.getElementById('bv-unit-modal').classList.remove('active');
+    const tmStile = document.getElementById('bv-stile-modal'); if (tmStile) tmStile.classList.remove('active');
     document.getElementById('bv-search-suggestions').classList.remove('active');
 
     unlockBateoLiveMap();
@@ -2214,13 +2347,14 @@ function apriPlayerWebcam(w) {
 
 function disegnaWebcam() {
     if (!map) return;
-    const ids = new Set(webcams.map(w => w.id));
+    const elenco = opzMappa.cam ? webcams : [];   // opzione "Videocamere" spenta: nessun segnalino
+    const ids = new Set(elenco.map(w => w.id));
     Object.keys(webcamMarkers).forEach(id => {
         if (ids.has(id)) return;
         map.removeLayer(webcamMarkers[id]);
         delete webcamMarkers[id];
     });
-    webcams.forEach(w => {
+    elenco.forEach(w => {
         const m = webcamMarkers[w.id];
         if (m) { m.setLatLng([w.lat, w.lon]); return; }
         const nuovo = L.marker([w.lat, w.lon], { icon: iconaWebcam(), zIndexOffset: 300, title: w.nome, keyboard: false }).addTo(map);
@@ -2241,6 +2375,270 @@ async function caricaWebcam() {
         webcams = lista;
         disegnaWebcam();
     } catch (e) { /* senza rete restano quelle già in mappa */ }
+}
+
+// ==========================================
+// NOMI DEI CANALI
+// Etichette ricavate dai tratti dei limiti di velocità (stessi dati: i nomi sono quelli di limiti_laguna.json).
+// Solo con zoom alto e solo nel riquadro visibile, come le fermate bus.
+// ==========================================
+const BV_ZOOM_NOMI_CANALI = 14;
+const BV_MAX_NOMI_CANALI = 150;
+let nomiCanaliEtichette = null;      // [{ n, lat, lon }]
+let nomiCanaliCaricamento = false;
+let nomiCanaliLayer = null;
+const nomiCanaliDisegnati = new Map();   // indice -> marker
+let overlayMappaTimer = null;
+
+function pianificaOverlayMappa() {
+    clearTimeout(overlayMappaTimer);
+    overlayMappaTimer = setTimeout(() => { aggiornaNomiCanali(); aggiornaSegnaliMappa(); }, 150);
+}
+
+function bvDistM(lat1, lon1, lat2, lon2) {
+    const R = 6371000, rad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function bvPuntoInAnello(x, y, a) {
+    let dentro = false;
+    for (let i = 0, j = a.length - 1; i < a.length; j = i++) {
+        const xi = a[i][0], yi = a[i][1], xj = a[j][0], yj = a[j][1];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) dentro = !dentro;
+    }
+    return dentro;
+}
+
+// Un'etichetta per ogni tratto con nome (i tratti piccoli vicini a uno già etichettato con lo stesso nome non ne hanno)
+function costruisciNomiCanali(dati) {
+    const parti = [];
+    for (const c of (dati && dati.canali) || []) {
+        const nome = String(c.n || '').trim();
+        if (!nome) continue;
+        for (const poly of c.g || []) {
+            const ring = poly && poly[0];
+            if (!ring || ring.length < 3) continue;
+            let A = 0, cx = 0, cy = 0, mx = 0, my = 0;
+            for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                const f = ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+                A += f; cx += (ring[j][0] + ring[i][0]) * f; cy += (ring[j][1] + ring[i][1]) * f;
+                mx += ring[i][0]; my += ring[i][1];
+            }
+            let lon = NaN, lat = NaN;
+            if (Math.abs(A) > 1e-14) { lon = cx / (3 * A); lat = cy / (3 * A); }
+            if (!Number.isFinite(lon) || !bvPuntoInAnello(lon, lat, ring)) {
+                // baricentro fuori dal tratto (canale curvo): si usa il vertice più vicino alla media dei vertici
+                const ax = mx / ring.length, ay = my / ring.length;
+                let best = ring[0], bd = Infinity;
+                for (const p of ring) { const d = (p[0] - ax) ** 2 + (p[1] - ay) ** 2; if (d < bd) { bd = d; best = p; } }
+                lon = best[0]; lat = best[1];
+            }
+            parti.push({ n: nome, lat, lon, a: Math.abs(A) });
+        }
+    }
+    parti.sort((p, q) => q.a - p.a);   // prima i tratti grandi
+    const perNome = new Map(), out = [];
+    for (const p of parti) {
+        const gia = perNome.get(p.n) || perNome.set(p.n, []).get(p.n);
+        if (gia.some(e => bvDistM(e.lat, e.lon, p.lat, p.lon) < 300)) continue;
+        const e = { n: p.n, lat: p.lat, lon: p.lon };
+        gia.push(e); out.push(e);
+    }
+    return out;
+}
+
+async function aggiornaNomiCanali() {
+    if (!map) return;
+    const visibili = opzMappa.canali && map.getZoom() >= BV_ZOOM_NOMI_CANALI;
+    if (!visibili) {
+        if (nomiCanaliLayer) { nomiCanaliLayer.clearLayers(); nomiCanaliDisegnati.clear(); }
+        return;
+    }
+    if (!nomiCanaliEtichette) {
+        if (nomiCanaliCaricamento) return;
+        nomiCanaliCaricamento = true;
+        try {
+            if (!bvLimitiDati) {
+                const r = await fetch(`${API_URL}/api/limiti/${LIMITI_PROFILO}`);
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                bvLimitiDati = await r.json();
+                if (!bvLimiti) bvLimiti = bvLimitiCostruisci(bvLimitiDati);
+            }
+            nomiCanaliEtichette = costruisciNomiCanali(bvLimitiDati);
+        } catch (e) {
+            console.warn('Nomi dei canali non disponibili:', e.message);
+            return;
+        } finally { nomiCanaliCaricamento = false; }
+        if (!opzMappa.canali) return;
+    }
+    if (!nomiCanaliLayer) nomiCanaliLayer = L.layerGroup().addTo(map);
+    const area = map.getBounds().pad(0.25), tieni = map.getBounds().pad(0.6);
+    for (const [k, m] of nomiCanaliDisegnati) {
+        if (!tieni.contains(m.getLatLng())) { nomiCanaliLayer.removeLayer(m); nomiCanaliDisegnati.delete(k); }
+    }
+    for (let i = 0; i < nomiCanaliEtichette.length; i++) {
+        if (nomiCanaliDisegnati.size >= BV_MAX_NOMI_CANALI) break;
+        const e = nomiCanaliEtichette[i];
+        if (nomiCanaliDisegnati.has(i) || !area.contains([e.lat, e.lon])) continue;
+        const icona = L.divIcon({ html: `<span class="bv-canale-lbl">${bvEsc(e.n)}</span>`, className: '', iconSize: [0, 0] });
+        const m = L.marker([e.lat, e.lon], { icon: icona, interactive: false, keyboard: false, zIndexOffset: -500 }).addTo(nomiCanaliLayer);
+        nomiCanaliDisegnati.set(i, m);
+    }
+}
+
+// ==========================================
+// SEGNALI (BRICCOLE) - sola visione
+// Segnalini neri sopra quelli cartografici. L'elenco sta sul server (data/segnali.json) e si modifica solo dalla
+// versione completa di BateoLive (admin e collab-mappe). Qui compaiono con "Info briccole" attivo (spento di base),
+// solo con zoom alto (ce n'è uno ogni ~25 m, i canali vicini ne mettono tanti sullo schermo) e solo nel riquadro visibile.
+// ==========================================
+// A zoom 17.5 sono circa 0,6 m per pixel (~40 px tra due segnali sullo stesso canale); più bassa e i segnalini si sovrappongono.
+const BV_ZOOM_SEGNALI = 17.5;
+const BV_MAX_SEGNALI = 800;
+let segnaliLayer = null;
+const segnaliDisegnati = new Map();   // id -> marker
+
+function briccoleAttive() { return !!opzMappa.briccole; }
+function zoomSegnaliOk() { return !!map && map.getZoom() >= BV_ZOOM_SEGNALI; }
+
+const TIPI_SEGNALE = { palo: 'Palo singolo', gruppo: 'Gruppo pali', dama: 'Dama' };
+const etichettaTipoSegnale = (t) => TIPI_SEGNALE[t] || TIPI_SEGNALE.palo;
+
+async function caricaSegnali() {
+    if (segnaliInCaricamento) return;
+    segnaliInCaricamento = true;
+    try {
+        const r = await fetch(`${API_URL}/api/segnali`);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const lista = await r.json();
+        if (!Array.isArray(lista)) throw new Error('risposta non valida');
+        segnali = lista;
+        segnaliCaricati = true;
+        aggiornaSegnaliMappa();
+    } catch (e) {
+        console.warn('Segnali non disponibili:', e.message);
+    } finally { segnaliInCaricamento = false; }
+}
+
+function aggiornaUiSegnali() {
+    if (!briccoleAttive() && activeSelection && activeSelection.type === 'segnale') closeBateoLiveDrawer();
+    if (briccoleAttive() && !segnaliCaricati) caricaSegnali();
+    aggiornaSegnaliMappa();
+}
+
+function iconaSegnale() {
+    return L.divIcon({ html: '<div class="bv-seg-dot-wrap"><div class="bv-seg-dot"></div></div>', className: '', iconSize: [26, 26], iconAnchor: [13, 13] });
+}
+
+function svuotaSegnaliMappa() {
+    if (segnaliLayer) segnaliLayer.clearLayers();
+    segnaliDisegnati.clear();
+}
+
+function aggiornaSegnaliMappa() {
+    if (!map) return;
+    if (!segnaliLayer) segnaliLayer = L.layerGroup().addTo(map);
+    if (!briccoleAttive() || !zoomSegnaliOk()) {
+        if (segnaliDisegnati.size) svuotaSegnaliMappa();
+        return;
+    }
+    const perId = new Map(segnali.map(s => [s.id, s]));
+    const area = map.getBounds().pad(0.25), tieni = map.getBounds().pad(0.6);
+    for (const [id, m] of segnaliDisegnati) {
+        const s = perId.get(id);
+        if (!s || !tieni.contains([s.lat, s.lon])) { segnaliLayer.removeLayer(m); segnaliDisegnati.delete(id); }
+    }
+    for (const s of segnali) {
+        if (segnaliDisegnati.size >= BV_MAX_SEGNALI) break;
+        if (segnaliDisegnati.has(s.id) || !area.contains([s.lat, s.lon])) continue;
+        const titolo = `${etichettaTipoSegnale(s.tipo)}${s.numero ? ' n. ' + s.numero : ''}`;
+        const m = L.marker([s.lat, s.lon], { icon: iconaSegnale(), zIndexOffset: 250, keyboard: false, title: titolo }).addTo(segnaliLayer);
+        m.on('click', () => { const c = segnali.find(x => x.id === s.id); if (c) apriSchedaSegnale(c); });
+        segnaliDisegnati.set(s.id, m);
+    }
+}
+
+function apriSchedaSegnale(s) {
+    activeSelection = { type: 'segnale', id: s.id };
+    const riga = (k, v) => `<div class="bv-seg-riga"><span>${k}</span><b>${v}</b></div>`;
+    const html = riga('Canale', bvEsc(s.canale) || '—')
+        + riga('Numero', bvEsc(s.numero) || '—')
+        + riga('Tipo', bvEsc(etichettaTipoSegnale(s.tipo)))
+        + (s.tipo === 'gruppo' ? riga('Numero di pali', bvEsc(s.pali)) : '')
+        + riga('Presente', s.presente ? 'Sì' : 'No')
+        + riga('Luce', s.luce ? 'Sì' : 'No')
+        + (s.note ? `<div class="bv-seg-note">${bvEsc(s.note)}</div>` : '');
+    openBateoLiveDrawer(`${etichettaTipoSegnale(s.tipo)}${s.numero ? ' n. ' + s.numero : ''}`, html, { badge: '<span class="bv-seg-badge"></span>', sub: s.canale || 'Segnale' });
+}
+
+// ---- PDF riepilogativo: Canale / tipo + numero / info ----
+async function bvSegnaliPdf() {
+    const btn = document.getElementById('bv-opz-pdf');
+    if (btn) btn.disabled = true;
+    try {
+        try { // elenco fresco dal server (si usa quello in memoria se non risponde)
+            const r = await fetch(`${API_URL}/api/segnali`);
+            if (r.ok) { const l = await r.json(); if (Array.isArray(l)) { segnali = l; segnaliCaricati = true; } }
+        } catch (e) { /* resta l'elenco già caricato */ }
+        if (!segnali.length) { alert('Non ci sono ancora segnali da esportare.'); return; }
+        if (!(window.jspdf && window.jspdf.jsPDF)) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+        const { jsPDF } = window.jspdf;
+        const pulisci = (t) => String(t == null ? '' : t).replace(/[^\x20-\x7E\u00A0-\u00FF\n]/g, '').trim();   // i font base del PDF non hanno emoji e simboli esotici
+        const confronta = (a, b) => String(a).localeCompare(String(b), 'it', { numeric: true, sensitivity: 'base' });
+
+        const gruppi = new Map();
+        for (const s of segnali) {
+            const c = pulisci(s.canale) || 'non indicato';
+            (gruppi.get(c) || gruppi.set(c, []).get(c)).push(s);
+        }
+        const canali = [...gruppi.keys()].sort((a, b) => (a === 'non indicato') - (b === 'non indicato') || confronta(a, b));
+
+        const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+        const W = 210, M = 15, MAXY = 282, LARG = W - 2 * M;
+        let y = 20;
+        const salto = (h) => { if (y + h > MAXY) { doc.addPage(); y = 20; } };
+
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(17);
+        doc.text('Segnali - Info briccole', M, y); y += 7;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(110);
+        doc.text(`Aggiornato al ${new Date().toLocaleDateString('it-IT')} - ${segnali.length} segnali`, M, y); y += 9;
+        doc.setTextColor(0);
+
+        for (const canale of canali) {
+            salto(22);
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+            doc.text(`Canale ${canale}`, M, y);
+            doc.setDrawColor(180); doc.line(M, y + 1.8, W - M, y + 1.8);
+            y += 8;
+            const lista = gruppi.get(canale).slice().sort((a, b) => confronta(a.numero || '', b.numero || ''));
+            for (const s of lista) {
+                const righe = [];
+                righe.push(`Presente: ${s.presente ? 'Sì' : 'No'}   Luce: ${s.luce ? 'Sì' : 'No'}${s.tipo === 'gruppo' ? `   Pali: ${s.pali}` : ''}`);
+                const note = pulisci(s.note);
+                if (note) righe.push(...doc.setFont('helvetica', 'normal').setFontSize(9.5).splitTextToSize(`Note: ${note}`, LARG - 4));
+                salto(7 + righe.length * 4.6 + 3);
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5);
+                doc.text(`${etichettaTipoSegnale(s.tipo)} numero ${pulisci(s.numero) || '-'}`, M + 2, y); y += 5.2;
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+                for (const r of righe) { doc.text(r, M + 4, y); y += 4.6; }
+                y += 3;
+            }
+            y += 3;
+        }
+
+        const n = doc.getNumberOfPages();
+        for (let p = 1; p <= n; p++) {
+            doc.setPage(p); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(130);
+            doc.text(`Pagina ${p} di ${n}`, W - M, 291, { align: 'right' });
+        }
+        doc.save(`segnali-briccole-${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e) {
+        alert('PDF non creato: ' + e.message);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 async function fetchAndUpdateBoats() {
