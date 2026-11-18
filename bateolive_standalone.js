@@ -114,6 +114,8 @@ let hiddenActvUnitNames = new Set();
 
 // Livelli Mappa e Stile
 let baseOSM, baseSat, nauticLayer;
+let baseOffline = null;          // mappa vettoriale locale (PMTiles); null se non disponibile
+let bvTemaScuroAttivo = false;   // flavor attualmente usato dalla mappa vettoriale
 let currentMapMode = 0; // 0: Base, 1: Satellitare
 
 // Opzioni della mappa (finestra "Stile mappa"): salvate sul dispositivo e riapplicate alle aperture successive.
@@ -248,6 +250,8 @@ async function loadMapDependencies() {
     }
     await loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/OverlappingMarkerSpiderfier-Leaflet/0.2.6/oms.min.js');
+    // mappa vettoriale offline: se la libreria non si carica si ricade su OSM (baseOSM)
+    try { await loadScript('https://unpkg.com/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js'); } catch (e) { /* fallback OSM */ }
     mapDepsLoaded = true;
 }
 
@@ -359,6 +363,17 @@ export function initUIBateoLive() {
         .bv-sw i::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.3); transition: transform 0.2s; }
         .bv-sw input:checked + i { background: var(--bv-primary); }
         .bv-sw input:checked + i::after { transform: translateX(18px); }
+        /* ---------- Impostazioni ---------- */
+        .bv-imp-lista { overflow-y: auto; min-height: 0; border-top: 1px solid var(--bv-border); margin-top: 4px; }
+        .bv-imp-riga { display: flex; align-items: center; gap: 12px; padding: 12px 2px; font-size: 14px; color: var(--bv-text); cursor: pointer; border-bottom: 1px solid var(--bv-border); -webkit-tap-highlight-color: transparent; }
+        .bv-imp-riga:last-child { border-bottom: none; }
+        .bv-imp-riga > i:first-child, .bv-imp-riga > svg:first-child { width: 22px; flex-shrink: 0; text-align: center; font-size: 17px; color: var(--bv-primary); }
+        .bv-imp-lbl { flex: 1; font-weight: 600; }
+        .bv-imp-riga .bv-sw { pointer-events: none; }
+        .bv-imp-riga.active .bv-sw i { background: var(--bv-primary); }
+        .bv-imp-riga.active .bv-sw i::after { transform: translateX(18px); }
+        .bv-imp-freccia { color: var(--bv-muted); font-size: 12px; }
+        .bv-imp-azione.active .bv-imp-lbl { color: var(--bv-primary); }
 
         /* ---------- Nomi dei canali ---------- */
         .bv-canale-lbl { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%) rotate(var(--marker-rotation, 0deg)); white-space: nowrap; pointer-events: none; font-size: 11px; font-weight: 700; font-style: italic; color: #0b3c6e; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 5px #fff, 0 0 5px #fff; }
@@ -699,22 +714,12 @@ export function initUIBateoLive() {
             <div id="bv-fab-gps" class="bv-fab" onclick="toggleBvGPS()" title="Attiva/Disattiva GPS">
                 <i class="fa-solid fa-satellite-dish"></i>
             <span class="bv-fab-lbl">GPS</span></div>
-            <div id="bv-fab-center" class="bv-fab" onclick="toggleBvCenterMap()" title="Centra sulla posizione" style="display: none;">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M12 2L4 20L12 17L20 20L12 2Z"/></svg>
-            <span class="bv-fab-lbl">Centra</span></div>
-            <div id="bv-fab-rotate" class="bv-fab" onclick="toggleBvMapRotation()" title="Rotazione mappa (rotta in alto)" style="display: none;">
-                <i class="fa-regular fa-compass"></i>
-            <span class="bv-fab-lbl">Ruota mappa</span></div>
             <div id="bv-fab-layers" class="bv-fab" onclick="apriStileMappaModal()" title="Stile mappa e livelli">
                 <i class="fa-solid fa-layer-group"></i>
             <span class="bv-fab-lbl">Stile mappa</span></div>
-            <div id="bv-fab-tema" class="bv-fab bv-fab-tema" onclick="toggleBvTema()" role="button" title="Passa al tema scuro" aria-label="Passa al tema scuro">
-                <i class="fa-solid fa-moon"></i>
-            <span class="bv-fab-lbl">Tema scuro</span></div>
-            <div id="bv-fab-unit" class="bv-fab" onclick="apriBateoLiveUnitModal()" title="Nome della tua barca" style="display: none;">
-                <i class="fa-solid fa-ship"></i>
-            <span class="bv-fab-lbl">Nome barca</span></div>
-            <div id="bv-fab-sim" class="bv-fab" onclick="toggleBvSimulate()" role="button" aria-pressed="false" title="Mostra le posizioni simulate dall'orario" aria-label="Mostra le posizioni simulate dall'orario"><span class="bv-fab-s">S</span><span class="bv-fab-lbl">Simulati</span></div>
+            <div id="bv-fab-settings" class="bv-fab" onclick="apriImpostazioniModal()" role="button" title="Impostazioni" aria-label="Impostazioni">
+                <i class="fa-solid fa-gear"></i>
+            <span class="bv-fab-lbl">Impostazioni</span></div>
             <div id="bv-fab-rewind" class="bv-fab" onclick="apriRewind()" title="Rewind: rivedi i movimenti passati"><i class="fa-solid fa-clock-rotate-left"></i><span class="bv-fab-lbl">Rewind</span></div>
             <div class="bv-fab" onclick="apriBateoLiveSearchModal()" title="Cerca mezzo o fermata"><i class="fa-solid fa-magnifying-glass"></i><span class="bv-fab-lbl">Cerca</span></div>
             <div class="bv-fab" onclick="apriBateoLiveFilterModal()" title="Filtra linee"><i class="fa-solid fa-filter"></i><span class="bv-fab-lbl">Filtra linee</span></div>
@@ -774,6 +779,31 @@ export function initUIBateoLive() {
                 </div>
                 <div class="bv-rw-cal-dow"><span>L</span><span>M</span><span>M</span><span>G</span><span>V</span><span>S</span><span>D</span></div>
                 <div id="bv-rw-cal-grid" class="bv-rw-cal-grid"></div>
+            </div>
+        </div>
+
+        <!-- Impostazioni: interruttori e comandi che prima erano tasti sulla mappa -->
+        <div id="bv-imp-modal" class="bv-modal-overlay" onclick="chiudiBateoLiveModals(event)">
+            <div class="bv-modal" onclick="event.stopPropagation()">
+                <h3>Impostazioni</h3>
+                <div class="bv-imp-lista">
+                    <div id="bv-fab-sim" class="bv-imp-riga" onclick="toggleBvSimulate()" role="button" aria-pressed="false">
+                        <i class="fa-regular fa-clock"></i><span class="bv-imp-lbl">Simulati</span><span class="bv-sw"><i></i></span>
+                    </div>
+                    <div id="bv-fab-tema" class="bv-imp-riga bv-fab-tema" onclick="toggleBvTema()" role="button" aria-pressed="false">
+                        <i class="fa-solid fa-moon"></i><span class="bv-imp-lbl">Tema scuro</span><span class="bv-sw"><i></i></span>
+                    </div>
+                    <div id="bv-fab-center" class="bv-imp-riga" style="display:none" onclick="toggleBvCenterMap()" role="button" aria-pressed="false">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M12 2L4 20L12 17L20 20L12 2Z"/></svg><span class="bv-imp-lbl">Centra sulla posizione</span><span class="bv-sw"><i></i></span>
+                    </div>
+                    <div id="bv-fab-rotate" class="bv-imp-riga" style="display:none" onclick="toggleBvMapRotation()" role="button" aria-pressed="false">
+                        <i class="fa-regular fa-compass"></i><span class="bv-imp-lbl">Ruota mappa</span><span class="bv-sw"><i></i></span>
+                    </div>
+                    <div id="bv-fab-unit" class="bv-imp-riga bv-imp-azione" style="display:none" onclick="chiudiImpostazioniModal(); apriBateoLiveUnitModal()" role="button" title="Nome della tua barca">
+                        <i class="fa-solid fa-ship"></i><span class="bv-imp-lbl">Nome barca</span><i class="fa-solid fa-chevron-right bv-imp-freccia"></i>
+                    </div>
+                </div>
+                <button type="button" class="bv-modal-btn secondario" onclick="chiudiImpostazioniModal()">Chiudi</button>
             </div>
         </div>
 
@@ -869,6 +899,8 @@ export function initUIBateoLive() {
     window.toggleBvCenterMap = toggleBvCenterMap;
     window.toggleBvMapRotation = toggleBvMapRotation;
     window.apriStileMappaModal = apriStileMappaModal;
+    window.apriImpostazioniModal = apriImpostazioniModal;
+    window.chiudiImpostazioniModal = chiudiImpostazioniModal;
     window.chiudiStileMappaModal = chiudiStileMappaModal;
     window.impostaStileMappa = impostaStileMappa;
     window.cambiaOpzioneMappa = cambiaOpzioneMappa;
@@ -931,12 +963,12 @@ function bvAggiornaIconaTema(scuro, anima) {
     const btn = document.getElementById('bv-fab-tema');
     const ico = btn && btn.querySelector('i');
     if (!ico) return;
-    ico.className = scuro ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+    ico.className = scuro ? 'fa-solid fa-moon' : 'fa-regular fa-sun';   // icona fissa sull'interruttore: acceso = tema scuro
     const testo = scuro ? 'Passa al tema chiaro' : 'Passa al tema scuro';
     btn.title = testo;
     btn.setAttribute('aria-label', testo);
-    const lbTema = btn.querySelector('.bv-fab-lbl');
-    if (lbTema) lbTema.textContent = scuro ? 'Tema chiaro' : 'Tema scuro';
+    btn.classList.toggle('active', scuro);
+    btn.setAttribute('aria-pressed', scuro ? 'true' : 'false');
     if (anima) { void ico.offsetWidth; ico.classList.add('swap'); }
 }
 
@@ -947,6 +979,19 @@ function bvAggiornaTema(anima) {
     const scuro = bvTemaForzato ? bvTemaForzato === 'dark' : sistemaScuro;
     root.classList.toggle('bv-dark', scuro);
     bvAggiornaIconaTema(scuro, anima === true);
+    if (bvTemaScuroAttivo !== scuro) {
+        bvTemaScuroAttivo = scuro;
+        if (map && baseOffline && currentMapMode === 0) {
+            map.removeLayer(baseOffline);
+            baseOffline = creaLayerOffline(scuro);
+            if (baseOffline) {
+                baseOffline.addTo(map);
+                if (opzMappa.nautico && map.hasLayer(nauticLayer)) nauticLayer.bringToFront();
+            } else {
+                map.addLayer(baseOSM);
+            }
+        }
+    }
     // barra di stato del telefono in tinta con la mappa
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', scuro ? '#1c2430' : '#ffffff');
@@ -969,6 +1014,19 @@ function avviaOsservatoreTema() {
             if (mq.addEventListener) mq.addEventListener('change', () => bvAggiornaTema());
         }
     } catch (e) { /* il tema non deve mai rompere la mappa */ }
+}
+
+function creaLayerOffline(scuro) {
+    if (!window.protomapsL) return null;
+    try {
+        return protomapsL.leafletLayer({
+            url: `${API_URL}/tiles/actv_venezia.pmtiles`,
+            flavor: scuro ? 'dark' : 'light',
+            lang: 'it',
+            maxDataZoom: 15,
+            maxZoom: 19
+        });
+    } catch (e) { return null; }
 }
 
 export async function avviaMotoreBateoLive() {
@@ -1012,13 +1070,33 @@ export async function avviaMotoreBateoLive() {
         baseSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
         nauticLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 18 });
 
+        const rootEl = document.getElementById('modal-bateolive-main');
+        bvTemaScuroAttivo = rootEl ? rootEl.classList.contains('bv-dark') : false;
+
+        baseOffline = creaLayerOffline(bvTemaScuroAttivo);
+        const layerBaseIniziale = baseOffline || baseOSM;
+
         map = L.map('bv-map', { 
             attributionControl: false, 
             zoomControl: false,
             zoomSnap: 0.25,
             zoomDelta: 0.5,
-            layers: opzMappa.nautico ? [baseOSM, nauticLayer] : [baseOSM]
+            layers: opzMappa.nautico ? [layerBaseIniziale, nauticLayer] : [layerBaseIniziale]
         }).setView([45.4371, 12.3326], 13);
+
+        // se l'archivio PMTiles non risponde sul backend, si torna a OSM
+        if (baseOffline) {
+            fetch(`${API_URL}/tiles/actv_venezia.pmtiles`, { method: 'HEAD' })
+                .then(r => { if (!r.ok) throw new Error(); })
+                .catch(() => {
+                    if (map && baseOffline && map.hasLayer(baseOffline)) map.removeLayer(baseOffline);
+                    baseOffline = null;
+                    if (currentMapMode === 0) {
+                        map.addLayer(baseOSM);
+                        if (opzMappa.nautico && map.hasLayer(nauticLayer)) nauticLayer.bringToFront();
+                    }
+                });
+        }
         map.on('zoomend zoomlevelschange', aggiornaBvZoomBtn);
         aggiornaBvZoomBtn();
 
@@ -1089,6 +1167,31 @@ function bvMessaggioHud(testo, ms = 2500) {
 }
 
 // Finestra "Stile mappa": base (OpenStreetMap / satellitare) e, sotto, le opzioni dei livelli (chiuse di base)
+function apriImpostazioniModal() {
+    const m = document.getElementById('bv-imp-modal');
+    if (!m) return;
+    m.classList.add('active');
+    lockBateoLiveMap();
+}
+
+function chiudiImpostazioniModal() {
+    chiudiBateoLiveModals({ target: { classList: { contains: () => true } } });
+}
+
+// Zoom automatico all'accensione del GPS: l'utente sta al centro dello schermo, quindi dal centro al bordo alto
+// (la prua, con la mappa ruotata) si vedono circa BV_GPS_METRI_AVANTI metri. Si applica al primo fix GPS.
+const BV_GPS_METRI_AVANTI = 300;
+let bvZoomGpsDaFare = false;
+function bvZoomPerMetriAvanti(metri, lat) {
+    const wrap = document.getElementById('bv-map-wrapper');
+    const h = wrap ? wrap.clientHeight : 0;
+    if (!map || !h) return null;
+    const mpp = metri / (h / 2);   // metri per pixel necessari
+    const z = Math.log2(156543.03392 * Math.cos(lat * Math.PI / 180) / mpp);
+    if (!isFinite(z)) return null;
+    return Math.min(map.getMaxZoom(), Math.max(map.getMinZoom(), Math.floor(z * 4) / 4));   // passo 0,25 come zoomSnap, per difetto: si vede almeno quella distanza
+}
+
 function apriStileMappaModal() {
     if (!map) return;
     sincronizzaFinestraStile();
@@ -1115,9 +1218,13 @@ function sincronizzaFinestraStile() {
 function impostaStileMappa(modo) {
     if (!map) return;
     currentMapMode = modo === 1 ? 1 : 0;
+    if (baseOffline) {
+        if (map.hasLayer(baseOffline)) map.removeLayer(baseOffline);
+        baseOffline = creaLayerOffline(bvTemaScuroAttivo) || null;   // flavor sempre allineato al tema
+    }
     if (map.hasLayer(baseOSM)) map.removeLayer(baseOSM);
     if (map.hasLayer(baseSat)) map.removeLayer(baseSat);
-    map.addLayer(currentMapMode === 0 ? baseOSM : baseSat);
+    map.addLayer(currentMapMode === 0 ? (baseOffline || baseOSM) : baseSat);
     if (opzMappa.nautico) {
         if (!map.hasLayer(nauticLayer)) map.addLayer(nauticLayer);
         nauticLayer.bringToFront();
@@ -1302,6 +1409,7 @@ function toggleBvGPS() {
 
     if (fab.classList.contains('active')) {
         fab.classList.remove('active');
+        bvZoomGpsDaFare = false;
         hudCompass.style.display = 'none';
         hudSpeed.style.display = 'none';
         hudStatus.style.display = 'none';
@@ -1331,6 +1439,7 @@ function toggleBvGPS() {
         toggleBvCenterMap(true);
         toggleBvMapRotation(true);   // col GPS acceso la mappa ruota subito con la rotta
         speedHistory = [];
+        bvZoomGpsDaFare = true;   // al primo fix GPS si imposta lo zoom per vedere ~300 m davanti
         
         caricaLimitiVelocita();
         watchId = navigator.geolocation.watchPosition(elaboraBvPosizioneGPS, (err) => {
@@ -1382,7 +1491,12 @@ function elaboraBvPosizioneGPS(position) {
         userMarker.setIcon(userIcon);
     }
     
-    if (followUser) map.setView([coords.latitude, coords.longitude]);
+    if (followUser) {
+        const zGps = bvZoomGpsDaFare ? bvZoomPerMetriAvanti(BV_GPS_METRI_AVANTI, coords.latitude) : null;
+        bvZoomGpsDaFare = false;
+        if (zGps !== null) map.setView([coords.latitude, coords.longitude], zGps);
+        else map.setView([coords.latitude, coords.longitude]);
+    }
 
     let normalizedHeading = validHeading % 360;
     if (normalizedHeading < 0) normalizedHeading += 360;
@@ -1618,6 +1732,7 @@ function unlockBateoLiveMap() {
     map.doubleClickZoom.enable();
     map.touchZoom.enable();
     if (map.tap) map.tap.enable();
+    if (courseUp) map.dragging.disable();   // con la mappa ruotata col GPS il trascinamento resta bloccato
 }
 
 function chiudiBateoLive() {
@@ -1690,6 +1805,7 @@ function chiudiBateoLiveModals(e) {
     document.getElementById('bv-filter-modal').classList.remove('active');
     document.getElementById('bv-unit-modal').classList.remove('active');
     const tmStile = document.getElementById('bv-stile-modal'); if (tmStile) tmStile.classList.remove('active');
+    const tmImp = document.getElementById('bv-imp-modal'); if (tmImp) tmImp.classList.remove('active');
     document.getElementById('bv-search-suggestions').classList.remove('active');
 
     unlockBateoLiveMap();
@@ -2496,7 +2612,7 @@ async function aggiornaNomiCanali() {
 // solo con zoom alto (ce n'è uno ogni ~25 m, i canali vicini ne mettono tanti sullo schermo) e solo nel riquadro visibile.
 // ==========================================
 // A zoom 17.5 sono circa 0,6 m per pixel (~40 px tra due segnali sullo stesso canale); più bassa e i segnalini si sovrappongono.
-const BV_ZOOM_SEGNALI = 17.5;
+const BV_ZOOM_SEGNALI = 15.5;
 const BV_MAX_SEGNALI = 800;
 let segnaliLayer = null;
 const segnaliDisegnati = new Map();   // id -> marker
